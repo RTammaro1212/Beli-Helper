@@ -1,3 +1,6 @@
+- never start the dev server (don't run pnpm dev)
+- use pnpm
+
 # Auto Beli UI guidelines
 
 - Use Crimson Pro from `next/font/google` as the primary typeface.
@@ -12,3 +15,5 @@
 - Do not number stages or entries as a ranking system; ranking is an action on a ready entry.
 - Review entries must expose a category choice and a three-way feeling choice before the mock rank action becomes available.
 - Keep the prototype intentionally lightweight: interactions can be local mock states until product logic is requested.
+
+- Avoid extra text that you weren't explicitly told to add. For example, extra notes, information about whats acceptable, information about how you built it or what the constraints are, error messages for every case.

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Crimson_Pro } from "next/font/google";
+import { Crimson_Pro, Stack_Sans_Text } from "next/font/google";
 import "./globals.css";
 
 const crimsonPro = Crimson_Pro({
@@ -8,9 +8,15 @@ const crimsonPro = Crimson_Pro({
   display: "swap",
 });
 
+const stackSansText = Stack_Sans_Text({
+  variable: "--font-stack-sans-text",
+  subsets: ["latin"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Auto Beli",
-  description: "A lightweight restaurant ranking prototype.",
+  description: "Organize food photos into location and time-based clusters.",
 };
 
 export default function RootLayout({
@@ -19,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={crimsonPro.variable}>
+    <html lang="en" className={`${crimsonPro.variable} ${stackSansText.variable}`}>
       <body>{children}</body>
     </html>
   );
