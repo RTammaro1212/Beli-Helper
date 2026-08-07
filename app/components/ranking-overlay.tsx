@@ -28,6 +28,7 @@ type RankingOverlayProps = {
     onTogglePause: () => void;
     onRetry: (step: RankingStepId) => void;
     onSkipStep: (step: RankingStepId) => void;
+    onContinuePhotos: () => void;
     onSkipPhotos: () => void;
     onFinished: () => void;
 };
@@ -58,6 +59,7 @@ export function RankingOverlay({
     onTogglePause,
     onRetry,
     onSkipStep,
+    onContinuePhotos,
     onSkipPhotos,
     onFinished,
 }: RankingOverlayProps) {
@@ -236,15 +238,25 @@ export function RankingOverlay({
                                     {progress.error}
                                 </p>
                                 <div className="mt-5 flex gap-3">
-                                    {progress.recovery === "skip_photos" ? (
-                                        <button
-                                            className="rounded-sm bg-accent px-6 py-3 text-sm text-white transition-colors hover:bg-accent/85 disabled:opacity-50"
-                                            type="button"
-                                            disabled={launching}
-                                            onClick={onSkipPhotos}
-                                        >
-                                            Skip photos
-                                        </button>
+                                    {progress.recovery === "photos_not_found" ? (
+                                        <>
+                                            <button
+                                                className="rounded-sm bg-accent px-6 py-3 text-sm text-white transition-colors hover:bg-accent/85 disabled:opacity-50"
+                                                type="button"
+                                                disabled={launching}
+                                                onClick={onContinuePhotos}
+                                            >
+                                                Continue with added photos
+                                            </button>
+                                            <button
+                                                className="rounded-sm bg-neutral-100 px-6 py-3 text-sm text-neutral-800 transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                                                type="button"
+                                                disabled={launching}
+                                                onClick={onSkipPhotos}
+                                            >
+                                                Skip photos
+                                            </button>
+                                        </>
                                     ) : null}
                                 </div>
                             </div>

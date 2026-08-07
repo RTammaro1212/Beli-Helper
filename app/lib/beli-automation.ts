@@ -124,14 +124,16 @@ function scheduleCleanup(session: SessionRecord) {
 
 function launchSession(
     session: SessionRecord,
-    startStep: RankingStepId | "skip_photos",
+    startStep: RankingStepId | "skip_photos" | "continue_photos",
 ) {
     session.runVersion += 1;
     const runVersion = session.runVersion;
     const argumentsList =
         startStep === "skip_photos"
             ? ["--config", session.configPath, "--skip-photos"]
-            : ["--config", session.configPath, "--start-step", startStep];
+            : startStep === "continue_photos"
+              ? ["--config", session.configPath, "--continue-photos"]
+              : ["--config", session.configPath, "--start-step", startStep];
     const child = spawn(
         session.binary,
         argumentsList,
@@ -183,7 +185,7 @@ function launchSession(
                 current.state = "error";
                 current.error = event.message ?? "Beli automation failed.";
                 current.recovery =
-                    event.code === "photos_not_found" ? "skip_photos" : null;
+                    event.code === "photos_not_found" ? "photos_not_found" : null;
             } else if (event.type === "diagnostic") {
                 console.info(
                     `[beli-automation:${session.id}] ${event.message ?? ""}`,
@@ -336,7 +338,7 @@ export async function skipBeliAutomationStep(
 
 export async function skipBeliPhotos(sessionId: string) {
     const session = sessions.get(sessionId);
-    if (!session || session.recovery !== "skip_photos") return null;
+    if (!session || session.recovery !== "photos_not_found") return null;
     if (session.cleanupTimer) {
         clearTimeout(session.cleanupTimer);
         session.cleanupTimer = null;
@@ -348,6 +350,23 @@ export async function skipBeliPhotos(sessionId: string) {
     session.error = null;
     session.recovery = null;
     launchSession(session, "skip_photos");
+    return getBeliAutomationStatus(sessionId)!;
+}
+
+export async function continueBeliPhotos(sessionId: string) {
+    const session = sessions.get(sessionId);
+    if (!session || session.recovery !== "photos_not_found") return null;
+    if (session.cleanupTimer) {
+        clearTimeout(session.cleanupTimer);
+        session.cleanupTimer = null;
+    }
+    await stopSessionProcess(session);
+    session.binary = await getAutomationBinary();
+    session.state = "running";
+    session.steps = freshSteps("add_photo_descriptions");
+    session.error = null;
+    session.recovery = null;
+    launchSession(session, "continue_photos");
     return getBeliAutomationStatus(sessionId)!;
 }
 

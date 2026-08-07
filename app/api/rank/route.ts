@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
     cancelBeliAutomation,
+    continueBeliPhotos,
     getBeliAutomationStatus,
     retryBeliAutomation,
     skipBeliPhotos,
@@ -44,6 +45,7 @@ const retryRequestSchema = z.object({
         "add_notes",
         "set_visit_date",
         "add_photos",
+        "add_photo_descriptions",
         "finish_in_beli",
     ]),
     action: z.enum(["retry", "skip"]).default("retry"),
@@ -175,12 +177,18 @@ export async function PUT(request: Request) {
             );
         }
         const input = z
-            .object({ sessionId: z.string().uuid() })
+            .object({
+                sessionId: z.string().uuid(),
+                action: z.enum(["skip", "continue"]).default("skip"),
+            })
             .parse(await request.json());
-        const session = await skipBeliPhotos(input.sessionId);
+        const session =
+            input.action === "continue"
+                ? await continueBeliPhotos(input.sessionId)
+                : await skipBeliPhotos(input.sessionId);
         if (!session) {
             return NextResponse.json(
-                { error: "Photos cannot be skipped from this step." },
+                { error: "Photo recovery is not available from this step." },
                 { status: 409 },
             );
         }
@@ -193,7 +201,7 @@ export async function PUT(request: Request) {
             );
         }
         const message =
-            error instanceof Error ? error.message : "Could not skip photos.";
+            error instanceof Error ? error.message : "Could not recover photos.";
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }

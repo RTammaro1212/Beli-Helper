@@ -660,7 +660,10 @@ export default function Home() {
             const response = await fetch("/api/rank", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ sessionId: rankingProgress.id }),
+                body: JSON.stringify({
+                    sessionId: rankingProgress.id,
+                    action: "skip",
+                }),
             });
             const result = (await response.json()) as
                 | RankingSessionStatus
@@ -677,6 +680,41 @@ export default function Home() {
         } catch (error) {
             window.alert(
                 error instanceof Error ? error.message : "Could not skip photos",
+            );
+        } finally {
+            setRankingLaunching(false);
+        }
+    };
+
+    const continueRankingPhotos = async () => {
+        if (!rankingProgress || rankingLaunching) return;
+        setRankingLaunching(true);
+        try {
+            const response = await fetch("/api/rank", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sessionId: rankingProgress.id,
+                    action: "continue",
+                }),
+            });
+            const result = (await response.json()) as
+                | RankingSessionStatus
+                | { error?: string };
+            if (!response.ok) {
+                window.alert(
+                    "error" in result
+                        ? result.error ?? "Could not continue with added photos"
+                        : "Could not continue with added photos",
+                );
+                return;
+            }
+            setRankingProgress(result as RankingSessionStatus);
+        } catch (error) {
+            window.alert(
+                error instanceof Error
+                    ? error.message
+                    : "Could not continue with added photos",
             );
         } finally {
             setRankingLaunching(false);
@@ -873,6 +911,7 @@ export default function Home() {
                     onTogglePause={() => void toggleRankingPause()}
                     onRetry={(step) => void retryRanking(step)}
                     onSkipStep={(step) => void skipRankingStep(step)}
+                    onContinuePhotos={() => void continueRankingPhotos()}
                     onSkipPhotos={() => void skipRankingPhotos()}
                     onFinished={finishRanking}
                 />

@@ -111,6 +111,13 @@ private final class BeliAutomation {
             emit(type: "complete", step: nil, message: nil)
             return
         }
+        if startStep == "continue_photos" {
+            try await continueFromPhotoPicker()
+            try await addingPhotoDescriptions()
+            try await finishingInBeli()
+            emit(type: "complete", step: nil, message: nil)
+            return
+        }
         guard let startIndex = Self.stepOrder.firstIndex(of: startStep) else {
             throw AutomationFailure.message("The retry checkpoint is invalid.")
         }
@@ -120,8 +127,9 @@ private final class BeliAutomation {
         if startIndex <= 3 { try await choosingCategory() }
         if startIndex <= 4 { try await addingNotes() }
         if startIndex <= 5 { try await settingVisitDate() }
-        if startIndex <= 6 { try await addingPhotos() }
-        if startIndex <= 7 { try await finishingInBeli() }
+        if startIndex <= 6 { try await findingPhotos() }
+        if startIndex <= 7 { try await addingPhotoDescriptions() }
+        if startIndex <= 8 { try await finishingInBeli() }
         emit(type: "complete", step: nil, message: nil)
     }
 
@@ -173,7 +181,17 @@ private final class BeliAutomation {
 
     private func choosingCategory() async throws {
         start("choose_category")
-        let title = try await waitForText("choose a category", timeout: 20)
+        var title = try await findText("choose a category", timeout: 2)
+        if title == nil {
+            let categoryRow = try await waitForText("add to my list of", timeout: 20)
+            try await clickDetectedTarget(
+                CGPoint(x: 0.57, y: categoryRow.center.y)
+            )
+            title = try await findText("choose a category", timeout: 20)
+        }
+        guard let title else {
+            throw AutomationFailure.message("The Beli category picker did not open.")
+        }
         let categoryLabel: String
         switch configuration.category {
         case "Restaurant": categoryLabel = "restaurants"
@@ -241,7 +259,7 @@ private final class BeliAutomation {
         finish("set_visit_date")
     }
 
-    private func addingPhotos() async throws {
+    private func findingPhotos() async throws {
         start("add_photos")
         let addPhotos = try await waitForText("add photos", timeout: 20)
         try await clickDetectedTarget(addPhotos.center)
@@ -271,10 +289,28 @@ private final class BeliAutomation {
         guard targets.count == configuration.photoPaths.count else {
             throw AutomationFailure.message("One of the meal photos could not be read.")
         }
-        let selectedOrder = try await selectPhotos(targets)
+        try saveSelectedPhotoOrder([])
+        _ = try await selectPhotos(targets)
 
         click(CGPoint(x: 0.938, y: 0.144))
-        let descriptions = selectedOrder.map { index in
+        _ = try await waitForText("photo upload", timeout: 20) { $0.center.y < 0.2 }
+        finish("add_photos")
+    }
+
+    private func continueFromPhotoPicker() async throws {
+        let existingUpload = try await findText("photo upload", timeout: 2) {
+            $0.center.y < 0.2
+        }
+        if existingUpload == nil {
+            click(CGPoint(x: 0.938, y: 0.144))
+            _ = try await waitForText("photo upload", timeout: 20) { $0.center.y < 0.2 }
+        }
+    }
+
+    private func addingPhotoDescriptions() async throws {
+        start("add_photo_descriptions")
+        _ = try await waitForText("photo upload", timeout: 20) { $0.center.y < 0.2 }
+        let descriptions = loadSelectedPhotoOrder().map { index in
             guard let photoDescriptions = configuration.photoDescriptions,
                   photoDescriptions.indices.contains(index) else {
                 return "Menu"
@@ -285,52 +321,71 @@ private final class BeliAutomation {
         try await addPhotoDescriptions(descriptions)
         let save = try await waitForText("save", timeout: 35) { $0.center.y < 0.18 }
         try await clickDetectedTarget(save.center)
-        finish("add_photos")
+        finish("add_photo_descriptions")
     }
 
     private func addPhotoDescriptions(_ descriptions: [String]) async throws {
         _ = try await waitForText("photo upload", timeout: 20) { $0.center.y < 0.2 }
+        var descriptionIndex = 0
+        var previousScreenFeature: [Float]?
+        var unchangedScreens = 0
+        var scrolls = 0
 
-        for (index, description) in descriptions.enumerated() {
-            var prompt: OCRItem?
-            var scrolls = 0
-            while prompt == nil && scrolls < 30 {
-                let items = try recognizeText(in: await capture.image())
-                prompt = items
-                    .filter { item in
-                        let text = normalize(item.text)
-                        return text.contains("what s this") &&
-                            item.center.y > 0.14 &&
-                            item.center.y < 0.88
-                    }
-                    .min { $0.center.y < $1.center.y }
-                if prompt == nil {
-                    scrollPhotoUpload()
-                    try await pause(0.55)
-                    scrolls += 1
+        while scrolls < 40 {
+            let image = try await capture.image()
+            let items = try recognizeText(in: image)
+            let prompt = items
+                .filter { item in
+                    let text = normalize(item.text)
+                    return text.contains("what s this") &&
+                        item.center.y > 0.14 &&
+                        item.center.y < 0.88
                 }
-            }
-            guard let prompt else {
-                throw AutomationFailure.message("A photo description field could not be found.")
+                .min { $0.center.y < $1.center.y }
+
+            if let prompt {
+                let description = descriptions.indices.contains(descriptionIndex)
+                    ? descriptions[descriptionIndex]
+                    : "Menu"
+                try await clickDetectedTarget(prompt.center)
+                _ = try await waitForText("description", timeout: 12) {
+                    $0.center.y < 0.2
+                }
+                try typeText(description)
+                let done = try await waitForText("done", timeout: 12) {
+                    $0.center.y < 0.2
+                }
+                try await clickDetectedTarget(done.center)
+                _ = try await waitForText("photo upload", timeout: 12) {
+                    $0.center.y < 0.2
+                }
+                descriptionIndex += 1
+                previousScreenFeature = nil
+                unchangedScreens = 0
+                emit(
+                    type: "diagnostic",
+                    step: "add_photo_descriptions",
+                    message: "added photo description \(descriptionIndex)"
+                )
+                continue
             }
 
-            try await clickDetectedTarget(prompt.center)
-            _ = try await waitForText("description", timeout: 12) {
-                $0.center.y < 0.2
+            let screenFeature = imageFeature(image)
+            if let previousScreenFeature,
+               featureDistance(previousScreenFeature, screenFeature) < 0.006 {
+                unchangedScreens += 1
+            } else {
+                unchangedScreens = 0
             }
-            try typeText(description)
-            let done = try await waitForText("done", timeout: 12) {
-                $0.center.y < 0.2
-            }
-            try await clickDetectedTarget(done.center)
-            _ = try await waitForText("photo upload", timeout: 12) {
-                $0.center.y < 0.2
-            }
-            emit(
-                type: "diagnostic",
-                step: "add_photos",
-                message: "added photo description \(index + 1) of \(descriptions.count)"
-            )
+            if unchangedScreens >= 2 { break }
+            previousScreenFeature = screenFeature
+            scrollPhotoUpload()
+            try await pause(0.55)
+            scrolls += 1
+        }
+
+        guard descriptionIndex > 0 else {
+            throw AutomationFailure.message("No added photos were found to describe.")
         }
     }
 
@@ -369,13 +424,15 @@ private final class BeliAutomation {
         try await clickDetectedTarget(pickerClosePoint)
         try await pause(1)
         finish("add_photos")
+        start("add_photo_descriptions")
+        finish("add_photo_descriptions")
     }
 
     private func selectPhotos(_ targetImages: [CGImage]) async throws -> [Int] {
-        let targetFeatures = try targetImages.map {
-            try Self.imageFeaturePrint(Self.centerSquare($0))
+        let targetSignatures = try targetImages.map {
+            try Self.pixelSignature(Self.centerSquare($0))
         }
-        var remaining = Set(targetFeatures.indices)
+        var remaining = Set(targetSignatures.indices)
         var previousGridFeature: [Float]?
         var unchangedPages = 0
         var page = 0
@@ -385,14 +442,14 @@ private final class BeliAutomation {
             let image = try await capture.image()
             savePhotoDebugImage(image)
             let cells = Self.gridCells(in: image)
-            let cellFeatures = try cells.map { try Self.imageFeaturePrint($0.image) }
+            let cellSignatures = try cells.map { try Self.pixelSignature($0.image) }
             var candidates: [(target: Int, cell: Int, distance: Float)] = []
 
             for targetIndex in remaining {
-                for (cellIndex, cellFeature) in cellFeatures.enumerated() {
-                    let distance = try Self.featurePrintDistance(
-                        targetFeatures[targetIndex],
-                        cellFeature
+                for (cellIndex, cellSignature) in cellSignatures.enumerated() {
+                    let distance = Self.pixelSignatureDistance(
+                        targetSignatures[targetIndex],
+                        cellSignature
                     )
                     candidates.append((targetIndex, cellIndex, distance))
                 }
@@ -406,15 +463,16 @@ private final class BeliAutomation {
             )
 
             if let candidate = candidates.first(where: { candidate in
-                guard candidate.distance < 0.95 else { return false }
+                guard candidate.distance < 0.24 else { return false }
                 let secondBest = candidates.first {
                     $0.target == candidate.target && $0.cell != candidate.cell
                 }?.distance ?? .greatestFiniteMagnitude
-                return candidate.distance + 0.08 < secondBest || candidate.distance < 0.72
+                return candidate.distance + 0.035 < secondBest || candidate.distance < 0.13
             }) {
                 try await clickDetectedTarget(cells[candidate.cell].point)
                 remaining.remove(candidate.target)
                 selectedOrder.append(candidate.target)
+                try saveSelectedPhotoOrder(selectedOrder)
                 try await pause(0.3)
                 continue
             }
@@ -437,6 +495,30 @@ private final class BeliAutomation {
             throw AutomationFailure.photosNotFound
         }
         return selectedOrder
+    }
+
+    private var selectedPhotoOrderURL: URL? {
+        let directory = configuration.debugDirectory ?? configuration.photoPaths.first.map {
+            URL(fileURLWithPath: $0).deletingLastPathComponent().path
+        }
+        return directory.map {
+            URL(fileURLWithPath: $0).appendingPathComponent("selected-photo-order.json")
+        }
+    }
+
+    private func saveSelectedPhotoOrder(_ order: [Int]) throws {
+        guard let selectedPhotoOrderURL else { return }
+        let data = try JSONEncoder().encode(order)
+        try data.write(to: selectedPhotoOrderURL, options: .atomic)
+    }
+
+    private func loadSelectedPhotoOrder() -> [Int] {
+        guard let selectedPhotoOrderURL,
+              let data = try? Data(contentsOf: selectedPhotoOrderURL),
+              let order = try? JSONDecoder().decode([Int].self, from: data) else {
+            return []
+        }
+        return order
     }
 
     private struct GridCell {
@@ -982,23 +1064,78 @@ private final class BeliAutomation {
         return image.cropping(to: cropRect) ?? image
     }
 
-    private static func imageFeaturePrint(_ image: CGImage) throws -> VNFeaturePrintObservation {
-        let request = VNGenerateImageFeaturePrintRequest()
-        let handler = VNImageRequestHandler(cgImage: image, options: [:])
-        try handler.perform([request])
-        guard let observation = request.results?.first as? VNFeaturePrintObservation else {
-            throw AutomationFailure.message("A photo could not be analyzed.")
-        }
-        return observation
+    private struct PixelSignature {
+        let differenceHash: [UInt64]
+        let colors: [UInt8]
     }
 
-    private static func featurePrintDistance(
-        _ first: VNFeaturePrintObservation,
-        _ second: VNFeaturePrintObservation
-    ) throws -> Float {
-        var distance: Float = 0
-        try first.computeDistance(&distance, to: second)
-        return distance
+    private static func pixelSignature(_ image: CGImage) throws -> PixelSignature {
+        let width = 17
+        let height = 16
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw AutomationFailure.message("A photo could not be analyzed.")
+        }
+        context.interpolationQuality = .high
+        context.draw(
+            centerSquare(image),
+            in: CGRect(x: 0, y: 0, width: width, height: height)
+        )
+
+        var hash = [UInt64](repeating: 0, count: 4)
+        var colors: [UInt8] = []
+        colors.reserveCapacity(8 * 8 * 3)
+        for y in 0..<height {
+            for x in 0..<(width - 1) {
+                let first = (y * width + x) * 4
+                let second = first + 4
+                let firstLuminance = Int(pixels[first]) * 54 +
+                    Int(pixels[first + 1]) * 183 +
+                    Int(pixels[first + 2]) * 19
+                let secondLuminance = Int(pixels[second]) * 54 +
+                    Int(pixels[second + 1]) * 183 +
+                    Int(pixels[second + 2]) * 19
+                let bit = y * (width - 1) + x
+                if firstLuminance < secondLuminance {
+                    hash[bit / 64] |= UInt64(1) << UInt64(bit % 64)
+                }
+            }
+        }
+
+        for y in stride(from: 1, to: height, by: 2) {
+            for x in stride(from: 1, to: width - 1, by: 2) {
+                let offset = (y * width + x) * 4
+                colors.append(pixels[offset])
+                colors.append(pixels[offset + 1])
+                colors.append(pixels[offset + 2])
+            }
+        }
+        return PixelSignature(differenceHash: hash, colors: colors)
+    }
+
+    private static func pixelSignatureDistance(
+        _ first: PixelSignature,
+        _ second: PixelSignature
+    ) -> Float {
+        let differentBits = zip(first.differenceHash, second.differenceHash)
+            .reduce(0) { total, pair in
+                total + (pair.0 ^ pair.1).nonzeroBitCount
+            }
+        let hashDistance = Float(differentBits) / 256
+        let colorDifference = zip(first.colors, second.colors).reduce(0) { total, pair in
+            total + abs(Int(pair.0) - Int(pair.1))
+        }
+        let colorDistance = Float(colorDifference) /
+            Float(max(1, first.colors.count * 255))
+        return hashDistance * 0.7 + colorDistance * 0.3
     }
 
     private func imageFeature(_ image: CGImage) -> [Float] {
@@ -1064,6 +1201,7 @@ private final class BeliAutomation {
         "add_notes",
         "set_visit_date",
         "add_photos",
+        "add_photo_descriptions",
         "finish_in_beli",
     ]
     private static let dateFormatter: DateFormatter = {
@@ -1132,10 +1270,10 @@ private extension BeliAutomation {
     }
 
     static func matchFixtureDescription(screen: CGImage, target: CGImage) throws -> String {
-        let targetFeature = try imageFeaturePrint(centerSquare(target))
+        let targetSignature = try pixelSignature(centerSquare(target))
         let distances = try gridCells(in: screen).enumerated().map { index, cell in
-            let cellFeature = try imageFeaturePrint(cell.image)
-            let distance = try featurePrintDistance(targetFeature, cellFeature)
+            let cellSignature = try pixelSignature(cell.image)
+            let distance = pixelSignatureDistance(targetSignature, cellSignature)
             return (index, distance)
         }.sorted { $0.1 < $1.1 }
         return distances.prefix(5).map {
@@ -1179,15 +1317,17 @@ private struct Main {
             guard [3, 4, 5].contains(CommandLine.arguments.count),
                   CommandLine.arguments[1] == "--config" else {
                 throw AutomationFailure.message(
-                    "Usage: beli-automation --config <config.json> [--start-step <step> | --skip-photos]"
+                    "Usage: beli-automation --config <config.json> [--start-step <step> | --skip-photos | --continue-photos]"
                 )
             }
             let startStep: String
             if CommandLine.arguments.count == 4 {
-                guard CommandLine.arguments[3] == "--skip-photos" else {
+                guard ["--skip-photos", "--continue-photos"].contains(CommandLine.arguments[3]) else {
                     throw AutomationFailure.message("The recovery arguments are invalid.")
                 }
-                startStep = "skip_photos"
+                startStep = CommandLine.arguments[3] == "--skip-photos"
+                    ? "skip_photos"
+                    : "continue_photos"
             } else if CommandLine.arguments.count == 5 {
                 guard CommandLine.arguments[3] == "--start-step" else {
                     throw AutomationFailure.message("The retry arguments are invalid.")

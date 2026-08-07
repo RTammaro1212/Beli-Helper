@@ -5,7 +5,8 @@ export const RANKING_STEPS = [
     { id: "choose_category", label: "Choose category" },
     { id: "add_notes", label: "Add notes" },
     { id: "set_visit_date", label: "Set visit date" },
-    { id: "add_photos", label: "Add photos" },
+    { id: "add_photos", label: "Find photos" },
+    { id: "add_photo_descriptions", label: "Add photo descriptions" },
     { id: "finish_in_beli", label: "Finish in Beli" },
 ] as const;
 
@@ -18,5 +19,5 @@ export type RankingSessionStatus = {
     state: "running" | "paused" | "cancelled" | "complete" | "error";
     steps: Record<RankingStepId, RankingStepState>;
     error: string | null;
-    recovery: "skip_photos" | null;
+    recovery: "photos_not_found" | null;
 };
