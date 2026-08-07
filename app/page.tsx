@@ -535,6 +535,7 @@ export default function Home() {
                 body: JSON.stringify({
                     sessionId: rankingProgress.id,
                     step,
+                    action: "retry",
                 }),
             });
             const result = (await response.json()) as
@@ -554,6 +555,42 @@ export default function Home() {
                 error instanceof Error
                     ? error.message
                     : "Could not retry this step",
+            );
+        } finally {
+            setRankingLaunching(false);
+        }
+    };
+
+    const skipRankingStep = async (step: RankingStepId) => {
+        if (!rankingProgress || rankingLaunching) return;
+        setRankingLaunching(true);
+        try {
+            const response = await fetch("/api/rank", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sessionId: rankingProgress.id,
+                    step,
+                    action: "skip",
+                }),
+            });
+            const result = (await response.json()) as
+                | RankingSessionStatus
+                | { error?: string };
+            if (!response.ok) {
+                window.alert(
+                    "error" in result
+                        ? result.error ?? "Could not skip this step"
+                        : "Could not skip this step",
+                );
+                return;
+            }
+            setRankingProgress(result as RankingSessionStatus);
+        } catch (error) {
+            window.alert(
+                error instanceof Error
+                    ? error.message
+                    : "Could not skip this step",
             );
         } finally {
             setRankingLaunching(false);
@@ -835,6 +872,7 @@ export default function Home() {
                     onReopenPhone={() => void reopenRankingPhone()}
                     onTogglePause={() => void toggleRankingPause()}
                     onRetry={(step) => void retryRanking(step)}
+                    onSkipStep={(step) => void skipRankingStep(step)}
                     onSkipPhotos={() => void skipRankingPhotos()}
                     onFinished={finishRanking}
                 />

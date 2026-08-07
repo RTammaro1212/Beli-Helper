@@ -117,10 +117,11 @@ private final class BeliAutomation {
         if startIndex <= 0 { try await openingBeli() }
         if startIndex <= 1 { try await findingRestaurant() }
         if startIndex <= 2 { try await addingRating() }
-        if startIndex <= 3 { try await addingNotes() }
-        if startIndex <= 4 { try await settingVisitDate() }
-        if startIndex <= 5 { try await addingPhotos() }
-        if startIndex <= 6 { try await finishingInBeli() }
+        if startIndex <= 3 { try await choosingCategory() }
+        if startIndex <= 4 { try await addingNotes() }
+        if startIndex <= 5 { try await settingVisitDate() }
+        if startIndex <= 6 { try await addingPhotos() }
+        if startIndex <= 7 { try await finishingInBeli() }
         emit(type: "complete", step: nil, message: nil)
     }
 
@@ -167,22 +168,26 @@ private final class BeliAutomation {
         try await clickDetectedTarget(
             CGPoint(x: ratingLabel.center.x, y: max(0.05, ratingLabel.center.y - 0.055))
         )
-        if try await findText("choose a category", timeout: 2) != nil {
-            let categoryLabel: String
-            switch configuration.category {
-            case "Restaurant": categoryLabel = "restaurants"
-            case "Bar": categoryLabel = "bars"
-            case "Coffee/Tea": categoryLabel = "coffee & tea"
-            case "Bakery": categoryLabel = "bakeries"
-            case "Dessert/Ice Cream": categoryLabel = "ice cream & dessert"
-            default: categoryLabel = "restaurants"
-            }
-            let category = try await waitForText(categoryLabel, timeout: 10) {
-                $0.center.y > 0.72
-            }
-            try await clickDetectedTarget(category.center)
-        }
         finish("add_rating")
+    }
+
+    private func choosingCategory() async throws {
+        start("choose_category")
+        let title = try await waitForText("choose a category", timeout: 20)
+        let categoryLabel: String
+        switch configuration.category {
+        case "Restaurant": categoryLabel = "restaurants"
+        case "Bar": categoryLabel = "bars"
+        case "Coffee/Tea": categoryLabel = "coffee & tea"
+        case "Bakery": categoryLabel = "bakeries"
+        case "Dessert/Ice Cream": categoryLabel = "ice cream & dessert"
+        default: categoryLabel = "restaurants"
+        }
+        let category = try await waitForText(categoryLabel, timeout: 15) {
+            $0.center.y > title.center.y
+        }
+        try await clickDetectedTarget(category.center)
+        finish("choose_category")
     }
 
     private func addingNotes() async throws {
@@ -852,7 +857,7 @@ private final class BeliAutomation {
             "-e",
             "keystroke (currentCharacter as text)",
             "-e",
-            "delay 0.005",
+            "delay 0.01",
             "-e",
             "end repeat",
             "-e",
@@ -1055,6 +1060,7 @@ private final class BeliAutomation {
         "open_beli",
         "find_restaurant",
         "add_rating",
+        "choose_category",
         "add_notes",
         "set_visit_date",
         "add_photos",

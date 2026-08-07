@@ -304,6 +304,36 @@ export async function retryBeliAutomation(
     return getBeliAutomationStatus(sessionId)!;
 }
 
+export async function skipBeliAutomationStep(
+    sessionId: string,
+    skippedStep: RankingStepId,
+) {
+    const session = sessions.get(sessionId);
+    const skippedIndex = RANKING_STEPS.findIndex((step) => step.id === skippedStep);
+    if (!session || skippedIndex < 0) return null;
+    if (session.cleanupTimer) {
+        clearTimeout(session.cleanupTimer);
+        session.cleanupTimer = null;
+    }
+    await stopSessionProcess(session);
+    session.error = null;
+    session.recovery = null;
+
+    const nextStep = RANKING_STEPS[skippedIndex + 1];
+    if (!nextStep) {
+        session.state = "complete";
+        for (const step of RANKING_STEPS) session.steps[step.id] = "complete";
+        scheduleCleanup(session);
+        return getBeliAutomationStatus(sessionId)!;
+    }
+
+    session.binary = await getAutomationBinary();
+    session.state = "running";
+    session.steps = freshSteps(nextStep.id);
+    launchSession(session, nextStep.id);
+    return getBeliAutomationStatus(sessionId)!;
+}
+
 export async function skipBeliPhotos(sessionId: string) {
     const session = sessions.get(sessionId);
     if (!session || session.recovery !== "skip_photos") return null;

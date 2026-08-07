@@ -27,6 +27,7 @@ type RankingOverlayProps = {
     onReopenPhone: () => void;
     onTogglePause: () => void;
     onRetry: (step: RankingStepId) => void;
+    onSkipStep: (step: RankingStepId) => void;
     onSkipPhotos: () => void;
     onFinished: () => void;
 };
@@ -56,6 +57,7 @@ export function RankingOverlay({
     onReopenPhone,
     onTogglePause,
     onRetry,
+    onSkipStep,
     onSkipPhotos,
     onFinished,
 }: RankingOverlayProps) {
@@ -205,14 +207,24 @@ export function RankingOverlay({
                                             />
                                         )}
                                         <span>{step.label}</span>
-                                        <button
-                                            className="ml-auto rounded-xs bg-neutral-100 px-2.5 py-1.5 text-xs text-neutral-600 opacity-0 transition-[opacity,background-color] hover:bg-neutral-200 group-hover/step:opacity-100 group-focus-within/step:opacity-100 disabled:cursor-default disabled:opacity-0"
-                                            type="button"
-                                            disabled={launching}
-                                            onClick={() => onRetry(step.id)}
-                                        >
-                                            Retry from here
-                                        </button>
+                                        <div className="ml-auto flex gap-2 opacity-0 transition-opacity group-hover/step:opacity-100 group-focus-within/step:opacity-100">
+                                            <button
+                                                className="rounded-xs bg-neutral-100 px-2.5 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-200 disabled:cursor-default disabled:opacity-50"
+                                                type="button"
+                                                disabled={launching}
+                                                onClick={() => onRetry(step.id)}
+                                            >
+                                                Retry from here
+                                            </button>
+                                            <button
+                                                className="rounded-xs bg-neutral-100 px-2.5 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-200 disabled:cursor-default disabled:opacity-50"
+                                                type="button"
+                                                disabled={launching}
+                                                onClick={() => onSkipStep(step.id)}
+                                            >
+                                                Skip
+                                            </button>
+                                        </div>
                                     </li>
                                 );
                             })}

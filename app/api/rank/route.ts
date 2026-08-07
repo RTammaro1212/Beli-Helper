@@ -6,6 +6,7 @@ import {
     getBeliAutomationStatus,
     retryBeliAutomation,
     skipBeliPhotos,
+    skipBeliAutomationStep,
     startBeliAutomation,
 } from "../../lib/beli-automation";
 import {
@@ -39,11 +40,13 @@ const retryRequestSchema = z.object({
         "open_beli",
         "find_restaurant",
         "add_rating",
+        "choose_category",
         "add_notes",
         "set_visit_date",
         "add_photos",
         "finish_in_beli",
     ]),
+    action: z.enum(["retry", "skip"]).default("retry"),
 });
 
 function isLocalRequest(request: Request) {
@@ -139,7 +142,10 @@ export async function PATCH(request: Request) {
             );
         }
         const input = retryRequestSchema.parse(await request.json());
-        const session = await retryBeliAutomation(input.sessionId, input.step);
+        const session =
+            input.action === "skip"
+                ? await skipBeliAutomationStep(input.sessionId, input.step)
+                : await retryBeliAutomation(input.sessionId, input.step);
         if (!session) {
             return NextResponse.json(
                 { error: "Ranking session not found." },
