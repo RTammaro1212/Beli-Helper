@@ -5,6 +5,7 @@ import type { Photo, PhotoCluster } from "./photo-types";
 
 const MAX_DISTANCE_METERS = 20;
 const MAX_TIME_DIFFERENCE_MS = 4 * 60 * 60 * 1000;
+const HEIC_JPEG_QUALITY = 0.9;
 
 const imageExtensions = new Set([
   "avif",
@@ -34,6 +35,7 @@ type CandidateFile = {
   blob: Blob;
   name: string;
   path: string;
+  lastModified: number | null;
 };
 
 export function extensionFor(name: string) {
@@ -52,9 +54,10 @@ async function unpackBlob(
   blob: Blob,
   name: string,
   path: string,
+  lastModified: number | null,
 ): Promise<CandidateFile[]> {
   if (!isZip(name)) {
-    return isImage(name) ? [{ blob, name, path }] : [];
+    return isImage(name) ? [{ blob, name, path, lastModified }] : [];
   }
 
   const archive = await JSZip.loadAsync(blob);
@@ -66,17 +69,38 @@ async function unpackBlob(
     const nestedBlob = await entry.async("blob");
     const nestedPath = `${path.replace(/\.zip$/i, "")}/${entry.name}`;
     if (isZip(entry.name)) {
-      collected.push(...(await unpackBlob(nestedBlob, entry.name, nestedPath)));
+      collected.push(
+        ...(await unpackBlob(
+          nestedBlob,
+          entry.name,
+          nestedPath,
+          entry.date.getTime(),
+        )),
+      );
     } else if (isImage(entry.name)) {
       collected.push({
         blob: nestedBlob,
         name: entry.name.split("/").pop() ?? entry.name,
         path: nestedPath,
+        lastModified: entry.date.getTime(),
       });
     }
   }
 
   return collected;
+}
+
+function replaceExtension(name: string, extension: string) {
+  return name.replace(/\.[^.]+$/, `.${extension}`);
+}
+
+async function convertHeicToJpeg(blob: Blob) {
+  const { heicTo } = await import("heic-to");
+  return heicTo({
+    blob,
+    type: "image/jpeg",
+    quality: HEIC_JPEG_QUALITY,
+  });
 }
 
 export async function checksumBlob(blob: Blob) {
@@ -105,6 +129,14 @@ async function readPhoto(
     // Capture time is optional.
   }
 
+  if (
+    !Number.isFinite(takenAt) &&
+    candidate.lastModified !== null &&
+    Number.isFinite(candidate.lastModified)
+  ) {
+    takenAt = candidate.lastModified;
+  }
+
   try {
     const gps = await exifr.gps(candidate.blob);
     if (Number.isFinite(gps?.latitude)) latitude = gps.latitude;
@@ -113,16 +145,27 @@ async function readPhoto(
     // Location is optional.
   }
 
+  const isHeic = ["heic", "heif"].includes(extensionFor(candidate.name));
+  const displayBlob = isHeic
+    ? await convertHeicToJpeg(candidate.blob)
+    : candidate.blob;
+  const displayName = isHeic
+    ? replaceExtension(candidate.name, "jpg")
+    : candidate.name;
+  const displayPath = isHeic
+    ? replaceExtension(candidate.path, "jpg")
+    : candidate.path;
+
   return {
     id: crypto.randomUUID(),
     checksum,
-    name: candidate.name,
-    path: candidate.path,
-    url: URL.createObjectURL(candidate.blob),
-    blob: candidate.blob,
-    mediaType: candidate.blob.type || `image/${extensionFor(candidate.name)}`,
-    size: candidate.blob.size,
-    previewable: browserPreviewExtensions.has(extensionFor(candidate.name)),
+    name: displayName,
+    path: displayPath,
+    url: URL.createObjectURL(displayBlob),
+    blob: displayBlob,
+    mediaType: displayBlob.type || `image/${extensionFor(displayName)}`,
+    size: displayBlob.size,
+    previewable: browserPreviewExtensions.has(extensionFor(displayName)),
     takenAt,
     latitude,
     longitude,
@@ -263,7 +306,12 @@ export async function processFiles(
   const candidates = (
     await Promise.all(
       files.map((file) =>
-        unpackBlob(file, file.name, file.webkitRelativePath || file.name),
+        unpackBlob(
+          file,
+          file.name,
+          file.webkitRelativePath || file.name,
+          file.lastModified,
+        ),
       ),
     )
   ).flat();
