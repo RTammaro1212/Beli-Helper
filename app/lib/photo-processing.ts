@@ -108,6 +108,9 @@ async function readPhoto(candidate: CandidateFile): Promise<Photo> {
     name: candidate.name,
     path: candidate.path,
     url: URL.createObjectURL(candidate.blob),
+    blob: candidate.blob,
+    mediaType: candidate.blob.type || `image/${extensionFor(candidate.name)}`,
+    size: candidate.blob.size,
     previewable: browserPreviewExtensions.has(extensionFor(candidate.name)),
     takenAt,
     latitude,
@@ -165,10 +168,81 @@ export function clusterPhotos(photos: Photo[]) {
       cluster.photos.some((member) => photosBelongTogether(member, photo)),
     );
     if (existing) existing.photos.push(photo);
-    else clusters.push({ id: crypto.randomUUID(), photos: [photo] });
+    else {
+      clusters.push({
+        id: crypto.randomUUID(),
+        photos: [photo],
+        labelStatus: "ready",
+        placesSearch: null,
+        match: null,
+        category: null,
+        selection: null,
+        labelError: null,
+      });
+    }
   }
 
   return clusters;
+}
+
+export function addPhotosToClusters(
+  currentClusters: PhotoCluster[],
+  newPhotos: Photo[],
+) {
+  const clusters = currentClusters.map((cluster) => ({
+    ...cluster,
+    photos: [...cluster.photos],
+  }));
+
+  for (const photo of newPhotos) {
+    const existing = clusters.find((cluster) =>
+      cluster.photos.some((member) => photosBelongTogether(member, photo)),
+    );
+
+    if (existing) {
+      existing.photos.push(photo);
+      existing.photos.sort(
+        (a, b) =>
+          (a.takenAt ?? Number.MAX_SAFE_INTEGER) -
+          (b.takenAt ?? Number.MAX_SAFE_INTEGER),
+      );
+    } else {
+      clusters.push({
+        id: crypto.randomUUID(),
+        photos: [photo],
+        labelStatus: "ready",
+        placesSearch: null,
+        match: null,
+        category: null,
+        selection: null,
+        labelError: null,
+      });
+    }
+  }
+
+  return clusters;
+}
+
+export function clusterCoordinate(cluster: PhotoCluster) {
+  const coordinates = cluster.photos.flatMap((photo) =>
+    photo.latitude !== null && photo.longitude !== null
+      ? [{ latitude: photo.latitude, longitude: photo.longitude }]
+      : [],
+  );
+  if (!coordinates.length) return null;
+
+  const middle = Math.floor(coordinates.length / 2);
+  const latitudes = coordinates
+    .map(({ latitude }) => latitude)
+    .sort((a, b) => a - b);
+  const longitudes = coordinates
+    .map(({ longitude }) => longitude)
+    .sort((a, b) => a - b);
+
+  return {
+    latitude: latitudes[middle],
+    longitude: longitudes[middle],
+  };
 }
 
 export async function processFiles(files: File[]) {
@@ -194,4 +268,30 @@ export function formatClusterDate(cluster: PhotoCluster) {
     hour: "numeric",
     minute: "2-digit",
   }).format(timestamp);
+}
+
+const CITY_COMPONENT_TYPES = [
+  "locality",
+  "postal_town",
+  "sublocality",
+  "administrative_area_level_2",
+  "administrative_area_level_1",
+] as const;
+
+export function clusterCity(cluster: PhotoCluster) {
+  const candidates = cluster.match?.candidates ?? [];
+  const selectedPlace =
+    candidates.find(
+      (candidate) => candidate.placeId === cluster.selection?.placeId,
+    )?.place ?? candidates[0]?.place;
+  const components = selectedPlace?.addressComponents ?? [];
+
+  for (const type of CITY_COMPONENT_TYPES) {
+    const city = components.find((component) =>
+      component.types?.includes(type),
+    )?.longText;
+    if (city) return city;
+  }
+
+  return null;
 }

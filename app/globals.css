@@ -40,3 +40,31 @@ select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes queued-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.queued-pulse {
+  animation: queued-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .queued-pulse {
+    animation: none;
+  }
+}

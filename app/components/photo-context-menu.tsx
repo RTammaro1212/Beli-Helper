@@ -10,6 +10,7 @@ export function PhotoContextMenu({ menu, onSplit }: PhotoContextMenuProps) {
     <div
       className="fixed z-[60] min-w-[212px] bg-[#f2f6f1] p-1 font-sans"
       role="menu"
+      tabIndex={-1}
       style={{ left: menu.x, top: menu.y }}
       onContextMenu={(event) => event.preventDefault()}
     >

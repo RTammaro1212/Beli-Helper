@@ -36,7 +36,7 @@ export function EmptyUpload({
 }: EmptyUploadProps) {
   return (
     <section
-      className="flex min-h-[calc(100vh-150px)] flex-col items-center justify-center px-0 pb-[88px] pt-[30px] text-center"
+      className="mx-auto flex min-h-[calc(100vh-150px)] max-w-7xl flex-col items-center justify-center px-0 pb-[88px] pt-[30px] text-center"
       aria-live="polite"
     >
       <button
