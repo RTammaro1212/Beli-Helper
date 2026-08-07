@@ -123,8 +123,8 @@ private final class BeliAutomation {
         }
         if startIndex <= 0 { try await openingBeli() }
         if startIndex <= 1 { try await findingRestaurant() }
-        if startIndex <= 2 { try await addingRating() }
-        if startIndex <= 3 { try await choosingCategory() }
+        if startIndex <= 2 { try await choosingCategory() }
+        if startIndex <= 3 { try await addingRating() }
         if startIndex <= 4 { try await addingNotes() }
         if startIndex <= 5 { try await settingVisitDate() }
         if startIndex <= 6 { try await findingPhotos() }
@@ -161,9 +161,6 @@ private final class BeliAutomation {
 
     private func addingRating() async throws {
         start("add_rating")
-        let plusPoint = try await waitForTealCircle(timeout: 25)
-        try await clickThroughScreenshot(plusPoint)
-
         let label: String
         switch configuration.rating {
         case "liked": label = "i liked it"
@@ -183,7 +180,15 @@ private final class BeliAutomation {
         start("choose_category")
         var title = try await findText("choose a category", timeout: 2)
         if title == nil {
-            let categoryRow = try await waitForText("add to my list of", timeout: 20)
+            var categoryRow = try await findText("add to my list of", timeout: 2)
+            if categoryRow == nil {
+                let plusPoint = try await waitForTealCircle(timeout: 25)
+                try await clickThroughScreenshot(plusPoint)
+                categoryRow = try await findText("add to my list of", timeout: 20)
+            }
+            guard let categoryRow else {
+                throw AutomationFailure.message("The Beli rating form did not open.")
+            }
             try await clickDetectedTarget(
                 CGPoint(x: 0.57, y: categoryRow.center.y)
             )
@@ -1196,8 +1201,8 @@ private final class BeliAutomation {
     private static let stepOrder = [
         "open_beli",
         "find_restaurant",
-        "add_rating",
         "choose_category",
+        "add_rating",
         "add_notes",
         "set_visit_date",
         "add_photos",

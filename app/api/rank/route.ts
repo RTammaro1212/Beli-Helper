@@ -40,8 +40,8 @@ const retryRequestSchema = z.object({
     step: z.enum([
         "open_beli",
         "find_restaurant",
-        "add_rating",
         "choose_category",
+        "add_rating",
         "add_notes",
         "set_visit_date",
         "add_photos",
