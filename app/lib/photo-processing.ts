@@ -79,7 +79,17 @@ async function unpackBlob(
   return collected;
 }
 
-async function readPhoto(candidate: CandidateFile): Promise<Photo> {
+export async function checksumBlob(blob: Blob) {
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+async function readPhoto(
+  candidate: CandidateFile,
+  checksum: string,
+): Promise<Photo> {
   let latitude: number | null = null;
   let longitude: number | null = null;
   let takenAt: number | null = null;
@@ -105,6 +115,7 @@ async function readPhoto(candidate: CandidateFile): Promise<Photo> {
 
   return {
     id: crypto.randomUUID(),
+    checksum,
     name: candidate.name,
     path: candidate.path,
     url: URL.createObjectURL(candidate.blob),
@@ -245,7 +256,10 @@ export function clusterCoordinate(cluster: PhotoCluster) {
   };
 }
 
-export async function processFiles(files: File[]) {
+export async function processFiles(
+  files: File[],
+  existingChecksums: Iterable<string> = [],
+) {
   const candidates = (
     await Promise.all(
       files.map((file) =>
@@ -254,7 +268,21 @@ export async function processFiles(files: File[]) {
     )
   ).flat();
 
-  return Promise.all(candidates.map(readPhoto));
+  const checksums = new Set(existingChecksums);
+  const uniqueCandidates: Array<CandidateFile & { checksum: string }> = [];
+
+  for (const candidate of candidates) {
+    const checksum = await checksumBlob(candidate.blob);
+    if (checksums.has(checksum)) continue;
+    checksums.add(checksum);
+    uniqueCandidates.push({ ...candidate, checksum });
+  }
+
+  return Promise.all(
+    uniqueCandidates.map(({ checksum, ...candidate }) =>
+      readPhoto(candidate, checksum),
+    ),
+  );
 }
 
 export function formatClusterDate(cluster: PhotoCluster) {

@@ -13,6 +13,7 @@ import { PhotoClusterCard } from "./components/photo-cluster-card";
 import { PhotoContextMenu } from "./components/photo-context-menu";
 import {
     addPhotosToClusters,
+    checksumBlob,
     clusterCoordinate,
     processFiles,
 } from "./lib/photo-processing";
@@ -58,26 +59,36 @@ export default function Home() {
     useEffect(() => {
         let cancelled = false;
         void loadClusters()
-            .then((savedClusters) => {
+            .then(async (savedClusters) => {
                 if (cancelled) return;
-                const restored = savedClusters.map((cluster) => ({
-                    ...cluster,
-                    labelStatus:
-                        cluster.labelStatus === "matching" ||
-                            cluster.labelStatus === "queued"
-                            ? ("ready" as const)
-                            : (cluster.labelStatus ?? "ready"),
-                    placesSearch: cluster.placesSearch ?? null,
-                    match: cluster.match ?? null,
-                    category: cluster.category ?? cluster.match?.category ?? null,
-                    selection: cluster.selection ?? null,
-                    labelError: cluster.labelError ?? null,
-                    photos: cluster.photos.map((photo) => {
-                        const url = URL.createObjectURL(photo.blob);
-                        objectUrls.current.push(url);
-                        return { ...photo, url };
-                    }),
-                }));
+                const restored = await Promise.all(
+                    savedClusters.map(async (cluster) => ({
+                        ...cluster,
+                        labelStatus:
+                            cluster.labelStatus === "matching" ||
+                                cluster.labelStatus === "queued"
+                                ? ("ready" as const)
+                                : (cluster.labelStatus ?? "ready"),
+                        placesSearch: cluster.placesSearch ?? null,
+                        match: cluster.match ?? null,
+                        category: cluster.category ?? cluster.match?.category ?? null,
+                        selection: cluster.selection ?? null,
+                        labelError: cluster.labelError ?? null,
+                        photos: await Promise.all(
+                            cluster.photos.map(async (photo) => {
+                                const url = URL.createObjectURL(photo.blob);
+                                objectUrls.current.push(url);
+                                return {
+                                    ...photo,
+                                    checksum:
+                                        photo.checksum ?? await checksumBlob(photo.blob),
+                                    url,
+                                };
+                            }),
+                        ),
+                    })),
+                );
+                if (cancelled) return;
                 setClusters(restored);
                 if (restored.length) setMessage("");
             })
@@ -127,13 +138,18 @@ export default function Home() {
         setMessage("Reading photos and metadata…");
 
         try {
-            const photos = await processFiles(files);
+            const photos = await processFiles(
+                files,
+                clusters.flatMap((cluster) =>
+                    cluster.photos.map((photo) => photo.checksum),
+                ),
+            );
             objectUrls.current.push(...photos.map((photo) => photo.url));
             setClusters((current) => addPhotosToClusters(current, photos));
             setMessage(
                 photos.length
                     ? `${photos.length} photo${photos.length === 1 ? "" : "s"} added`
-                    : "No images found — videos and other files were ignored",
+                    : "No new photos added",
             );
         } catch (error) {
             console.error(error);

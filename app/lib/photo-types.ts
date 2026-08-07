@@ -7,6 +7,7 @@ import type {
 
 export type Photo = {
   id: string;
+  checksum: string;
   name: string;
   path: string;
   url: string;
