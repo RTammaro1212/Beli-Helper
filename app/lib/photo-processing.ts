@@ -1,11 +1,9 @@
-import exifr from "exifr";
 import JSZip from "jszip";
 
 import type { Photo, PhotoCluster } from "./photo-types";
 
 const MAX_DISTANCE_METERS = 20;
 const MAX_TIME_DIFFERENCE_MS = 4 * 60 * 60 * 1000;
-const HEIC_JPEG_QUALITY = 0.9;
 
 const imageExtensions = new Set([
   "avif",
@@ -90,19 +88,6 @@ async function unpackBlob(
   return collected;
 }
 
-function replaceExtension(name: string, extension: string) {
-  return name.replace(/\.[^.]+$/, `.${extension}`);
-}
-
-async function convertHeicToJpeg(blob: Blob) {
-  const { heicTo } = await import("heic-to");
-  return heicTo({
-    blob,
-    type: "image/jpeg",
-    quality: HEIC_JPEG_QUALITY,
-  });
-}
-
 export async function checksumBlob(blob: Blob) {
   const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
   return Array.from(new Uint8Array(digest), (byte) =>
@@ -114,61 +99,58 @@ async function readPhoto(
   candidate: CandidateFile,
   checksum: string,
 ): Promise<Photo> {
-  let latitude: number | null = null;
-  let longitude: number | null = null;
-  let takenAt: number | null = null;
-
-  try {
-    const metadata = await exifr.parse(candidate.blob, {
-      pick: ["DateTimeOriginal", "CreateDate", "ModifyDate"],
-    });
-    const date =
-      metadata?.DateTimeOriginal ?? metadata?.CreateDate ?? metadata?.ModifyDate;
-    if (date) takenAt = new Date(date).getTime();
-  } catch {
-    // Capture time is optional.
+  const formData = new FormData();
+  formData.set("file", candidate.blob, candidate.name);
+  formData.set("path", candidate.path);
+  if (candidate.lastModified !== null) {
+    formData.set("lastModified", String(candidate.lastModified));
   }
 
-  if (
-    !Number.isFinite(takenAt) &&
-    candidate.lastModified !== null &&
-    Number.isFinite(candidate.lastModified)
-  ) {
-    takenAt = candidate.lastModified;
+  const response = await fetch("/api/photos/process", {
+    method: "POST",
+    body: formData,
+  });
+  const result = (await response.json()) as
+    | {
+        data: string;
+        latitude: number | null;
+        longitude: number | null;
+        mediaType: string;
+        name: string;
+        path: string;
+        size: number;
+        takenAt: number | null;
+      }
+    | { error?: string };
+
+  if (!response.ok || !("data" in result)) {
+    const message =
+      "error" in result
+        ? result.error ?? "Photo processing failed"
+        : "Photo processing failed";
+    throw new Error(message);
   }
 
-  try {
-    const gps = await exifr.gps(candidate.blob);
-    if (Number.isFinite(gps?.latitude)) latitude = gps.latitude;
-    if (Number.isFinite(gps?.longitude)) longitude = gps.longitude;
-  } catch {
-    // Location is optional.
+  const binary = atob(result.data);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
   }
-
-  const isHeic = ["heic", "heif"].includes(extensionFor(candidate.name));
-  const displayBlob = isHeic
-    ? await convertHeicToJpeg(candidate.blob)
-    : candidate.blob;
-  const displayName = isHeic
-    ? replaceExtension(candidate.name, "jpg")
-    : candidate.name;
-  const displayPath = isHeic
-    ? replaceExtension(candidate.path, "jpg")
-    : candidate.path;
+  const displayBlob = new Blob([bytes], { type: result.mediaType });
 
   return {
     id: crypto.randomUUID(),
     checksum,
-    name: displayName,
-    path: displayPath,
+    name: result.name,
+    path: result.path,
     url: URL.createObjectURL(displayBlob),
     blob: displayBlob,
-    mediaType: displayBlob.type || `image/${extensionFor(displayName)}`,
-    size: displayBlob.size,
-    previewable: browserPreviewExtensions.has(extensionFor(displayName)),
-    takenAt,
-    latitude,
-    longitude,
+    mediaType: result.mediaType,
+    size: result.size,
+    previewable: browserPreviewExtensions.has(extensionFor(result.name)),
+    takenAt: result.takenAt,
+    latitude: result.latitude,
+    longitude: result.longitude,
   };
 }
 
