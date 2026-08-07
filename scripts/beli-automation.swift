@@ -53,6 +53,7 @@ private enum AutomationFailure: LocalizedError {
 
 private final class PhoneScreenshot {
     let window: SCWindow
+    private var hasCapturedImage = false
 
     init() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(
@@ -69,6 +70,11 @@ private final class PhoneScreenshot {
     }
 
     func image() async throws -> CGImage {
+        if hasCapturedImage {
+            try await Task.sleep(
+                nanoseconds: UInt64.random(in: 0...200_000_000)
+            )
+        }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let configuration = SCStreamConfiguration()
         configuration.width = max(1, Int(window.frame.width * scale))
@@ -76,10 +82,12 @@ private final class PhoneScreenshot {
         configuration.showsCursor = false
         configuration.capturesAudio = false
         let filter = SCContentFilter(desktopIndependentWindow: window)
-        return try await SCScreenshotManager.captureImage(
+        let image = try await SCScreenshotManager.captureImage(
             contentFilter: filter,
             configuration: configuration
         )
+        hasCapturedImage = true
+        return image
     }
 }
 
