@@ -1,6 +1,7 @@
 export const RANKING_STEPS = [
     { id: "open_beli", label: "Open Beli" },
     { id: "find_restaurant", label: "Find restaurant" },
+    { id: "start_rating", label: "Start rating" },
     { id: "choose_category", label: "Choose category" },
     { id: "add_rating", label: "Add rating" },
     { id: "add_notes", label: "Add notes" },

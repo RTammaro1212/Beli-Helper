@@ -54,7 +54,7 @@ export function OrganizerHeader({
                 href="/"
                 aria-label="Auto Beli home"
             >
-                Auto Beli
+                Auto <span className="text-accent">Beli</span>
             </Link>
 
             {unlabeledCount > 0 ? (

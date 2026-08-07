@@ -123,13 +123,14 @@ private final class BeliAutomation {
         }
         if startIndex <= 0 { try await openingBeli() }
         if startIndex <= 1 { try await findingRestaurant() }
-        if startIndex <= 2 { try await choosingCategory() }
-        if startIndex <= 3 { try await addingRating() }
-        if startIndex <= 4 { try await addingNotes() }
-        if startIndex <= 5 { try await settingVisitDate() }
-        if startIndex <= 6 { try await findingPhotos() }
-        if startIndex <= 7 { try await addingPhotoDescriptions() }
-        if startIndex <= 8 { try await finishingInBeli() }
+        if startIndex <= 2 { try await startingRating() }
+        if startIndex <= 3 { try await choosingCategory() }
+        if startIndex <= 4 { try await addingRating() }
+        if startIndex <= 5 { try await addingNotes() }
+        if startIndex <= 6 { try await settingVisitDate() }
+        if startIndex <= 7 { try await findingPhotos() }
+        if startIndex <= 8 { try await addingPhotoDescriptions() }
+        if startIndex <= 9 { try await finishingInBeli() }
         emit(type: "complete", step: nil, message: nil)
     }
 
@@ -174,6 +175,21 @@ private final class BeliAutomation {
             CGPoint(x: ratingLabel.center.x, y: max(0.05, ratingLabel.center.y - 0.055))
         )
         finish("add_rating")
+    }
+
+    private func startingRating() async throws {
+        start("start_rating")
+        let pickerIsOpen = try await findText("choose a category", timeout: 1) != nil
+        var categoryRow = try await findText("add to my list of", timeout: 2)
+        if !pickerIsOpen && categoryRow == nil {
+            let plusPoint = try await waitForTealCircle(timeout: 25)
+            try await clickThroughScreenshot(plusPoint)
+            categoryRow = try await findText("add to my list of", timeout: 20)
+        }
+        guard pickerIsOpen || categoryRow != nil else {
+            throw AutomationFailure.message("The Beli rating form did not open.")
+        }
+        finish("start_rating")
     }
 
     private func choosingCategory() async throws {
@@ -1190,7 +1206,7 @@ private final class BeliAutomation {
     private static func loadImage(_ path: String) -> CGImage? {
         let url = URL(fileURLWithPath: path) as CFURL
         guard let source = CGImageSourceCreateWithURL(url, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, [
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: 1_024,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -1201,6 +1217,7 @@ private final class BeliAutomation {
     private static let stepOrder = [
         "open_beli",
         "find_restaurant",
+        "start_rating",
         "choose_category",
         "add_rating",
         "add_notes",
