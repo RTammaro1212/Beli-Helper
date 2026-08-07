@@ -86,29 +86,6 @@ export async function POST(request: Request) {
   try {
     await writeFile(inputPath, Buffer.from(await upload.arrayBuffer()));
 
-    let takenAt: number | null = null;
-    let latitude: number | null = null;
-    let longitude: number | null = null;
-
-    try {
-      const metadata = await exifr.parse(inputPath, {
-        pick: ["DateTimeOriginal", "CreateDate", "ModifyDate"],
-      });
-      takenAt = validTimestamp(
-        metadata?.DateTimeOriginal ?? metadata?.CreateDate ?? metadata?.ModifyDate,
-      );
-    } catch {
-      // The browser file timestamp remains available as a fallback.
-    }
-
-    try {
-      const gps = await exifr.gps(inputPath);
-      if (Number.isFinite(gps?.latitude)) latitude = gps.latitude;
-      if (Number.isFinite(gps?.longitude)) longitude = gps.longitude;
-    } catch {
-      // Location is optional.
-    }
-
     if (isHeic) {
       await execFileAsync("/usr/bin/sips", [
         "-s",
@@ -121,6 +98,31 @@ export async function POST(request: Request) {
         "--out",
         outputPath,
       ]);
+    }
+
+    const metadataPath = isHeic ? outputPath : inputPath;
+
+    let takenAt: number | null = null;
+    let latitude: number | null = null;
+    let longitude: number | null = null;
+
+    try {
+      const metadata = await exifr.parse(metadataPath, {
+        pick: ["DateTimeOriginal", "CreateDate", "ModifyDate"],
+      });
+      takenAt = validTimestamp(
+        metadata?.DateTimeOriginal ?? metadata?.CreateDate ?? metadata?.ModifyDate,
+      );
+    } catch {
+      // The browser file timestamp remains available as a fallback.
+    }
+
+    try {
+      const gps = await exifr.gps(metadataPath);
+      if (Number.isFinite(gps?.latitude)) latitude = gps.latitude;
+      if (Number.isFinite(gps?.longitude)) longitude = gps.longitude;
+    } catch {
+      // Location is optional.
     }
 
     const output = await readFile(outputPath);
