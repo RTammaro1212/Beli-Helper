@@ -190,9 +190,11 @@ export function RankingOverlay({
                                     progress.steps[step.id] !== "pending" || completed,
                             ).map((step) => {
                                 const state = progress.steps[step.id];
+                                const showsError =
+                                    progress.state === "error" && state === "active";
                                 return (
                                     <li
-                                        className={`group/step flex items-center gap-3 text-sm ${state === "complete" ? "text-neutral-400" : "text-neutral-900"}`}
+                                        className={`group/step flex items-start gap-3 text-sm ${state === "complete" ? "text-neutral-400" : "text-neutral-900"}`}
                                         key={step.id}
                                     >
                                         {state === "active" && progress.state === "running" ? (
@@ -204,63 +206,64 @@ export function RankingOverlay({
                                             />
                                         ) : (
                                             <span
-                                                className="size-4 rounded-full bg-neutral-300"
+                                                className="mt-0.5 size-4 shrink-0 rounded-full bg-neutral-300"
                                                 aria-hidden="true"
                                             />
                                         )}
-                                        <span>{step.label}</span>
-                                        <div className="ml-auto flex gap-2 opacity-0 transition-opacity group-hover/step:opacity-100 group-focus-within/step:opacity-100">
-                                            <button
-                                                className="rounded-xs bg-neutral-100 px-2.5 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-200 disabled:cursor-default disabled:opacity-50"
-                                                type="button"
-                                                disabled={launching}
-                                                onClick={() => onRetry(step.id)}
-                                            >
-                                                Retry from here
-                                            </button>
-                                            <button
-                                                className="rounded-xs bg-neutral-100 px-2.5 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-200 disabled:cursor-default disabled:opacity-50"
-                                                type="button"
-                                                disabled={launching}
-                                                onClick={() => onSkipStep(step.id)}
-                                            >
-                                                Skip
-                                            </button>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-start gap-3">
+                                                <span>{step.label}</span>
+                                                <div className="ml-auto flex gap-2 opacity-0 transition-opacity group-hover/step:opacity-100 group-focus-within/step:opacity-100">
+                                                    <button
+                                                        className="rounded-xs bg-neutral-100 px-2.5 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-200 disabled:cursor-default disabled:opacity-50"
+                                                        type="button"
+                                                        disabled={launching}
+                                                        onClick={() => onRetry(step.id)}
+                                                    >
+                                                        Retry from here
+                                                    </button>
+                                                    <button
+                                                        className="rounded-xs bg-neutral-100 px-2.5 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-200 disabled:cursor-default disabled:opacity-50"
+                                                        type="button"
+                                                        disabled={launching}
+                                                        onClick={() => onSkipStep(step.id)}
+                                                    >
+                                                        Skip
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {showsError ? (
+                                                <div className="mt-2">
+                                                    <p className="text-sm text-neutral-600">
+                                                        {progress.error}
+                                                    </p>
+                                                    {progress.recovery === "photos_not_found" ? (
+                                                        <div className="mt-4 flex flex-wrap gap-3">
+                                                            <button
+                                                                className="rounded-sm bg-accent px-6 py-3 text-sm text-white transition-colors hover:bg-accent/85 disabled:opacity-50"
+                                                                type="button"
+                                                                disabled={launching}
+                                                                onClick={onContinuePhotos}
+                                                            >
+                                                                Continue with added photos
+                                                            </button>
+                                                            <button
+                                                                className="rounded-sm bg-neutral-100 px-6 py-3 text-sm text-neutral-800 transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                                                                type="button"
+                                                                disabled={launching}
+                                                                onClick={onSkipPhotos}
+                                                            >
+                                                                Skip photos
+                                                            </button>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            ) : null}
                                         </div>
                                     </li>
                                 );
                             })}
                         </ul>
-
-                        {progress.state === "error" ? (
-                            <div className="mt-auto pt-10">
-                                <p className="text-sm text-neutral-600">
-                                    {progress.error}
-                                </p>
-                                <div className="mt-5 flex gap-3">
-                                    {progress.recovery === "photos_not_found" ? (
-                                        <>
-                                            <button
-                                                className="rounded-sm bg-accent px-6 py-3 text-sm text-white transition-colors hover:bg-accent/85 disabled:opacity-50"
-                                                type="button"
-                                                disabled={launching}
-                                                onClick={onContinuePhotos}
-                                            >
-                                                Continue with added photos
-                                            </button>
-                                            <button
-                                                className="rounded-sm bg-neutral-100 px-6 py-3 text-sm text-neutral-800 transition-colors hover:bg-neutral-200 disabled:opacity-50"
-                                                type="button"
-                                                disabled={launching}
-                                                onClick={onSkipPhotos}
-                                            >
-                                                Skip photos
-                                            </button>
-                                        </>
-                                    ) : null}
-                                </div>
-                            </div>
-                        ) : null}
 
                         {completed ? (
                             <button
