@@ -11,6 +11,7 @@ import { EmptyUpload } from "./components/empty-upload";
 import { OrganizerHeader } from "./components/organizer-header";
 import { PhotoClusterCard } from "./components/photo-cluster-card";
 import { PhotoContextMenu } from "./components/photo-context-menu";
+import type { RankFeedback } from "./components/ranking-overlay";
 import {
     addPhotosToClusters,
     checksumBlob,
@@ -48,6 +49,8 @@ export default function Home() {
     );
     const [photoContextMenu, setPhotoContextMenu] =
         useState<PhotoContextMenuState | null>(null);
+    const [rankingClusterId, setRankingClusterId] = useState<string | null>(null);
+    const [rankingLaunching, setRankingLaunching] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const objectUrls = useRef<string[]>([]);
 
@@ -420,6 +423,25 @@ export default function Home() {
         setDraggingOver(false);
     };
 
+    const continueRanking = async (feedback: RankFeedback) => {
+        if (!rankingClusterId || rankingLaunching) return;
+        setRankingLaunching(true);
+
+        try {
+            const response = await fetch("/api/rank", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ clusterId: rankingClusterId, ...feedback }),
+            });
+            if (!response.ok) throw new Error("Could not open ranking workspace");
+            setRankingClusterId(null);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setRankingLaunching(false);
+        }
+    };
+
     const hasPhotos = clusters.length > 0;
     const unlabeledClusters = clusters.filter((cluster) => !cluster.match);
 
@@ -498,6 +520,13 @@ export default function Home() {
                                         void labelClusters([cluster]);
                                     }
                                 }}
+                                ranking={rankingClusterId === cluster.id}
+                                rankingLaunching={rankingLaunching}
+                                onOpenRanking={setRankingClusterId}
+                                onCancelRanking={() => setRankingClusterId(null)}
+                                onContinueRanking={(feedback) =>
+                                    void continueRanking(feedback)
+                                }
                             />
                         ))}
                     </div>
