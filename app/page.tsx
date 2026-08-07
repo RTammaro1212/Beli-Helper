@@ -19,6 +19,7 @@ import {
     addPhotosToClusters,
     checksumBlob,
     clusterCoordinate,
+    clusterCity,
     processFiles,
 } from "./lib/photo-processing";
 import {
@@ -33,6 +34,10 @@ import {
     type PhotoCluster,
     type PhotoContextMenuState,
 } from "./lib/photo-types";
+import type {
+    RankingSessionStatus,
+    RankingStepId,
+} from "./lib/ranking-types";
 import {
     labelStackResponseSchema,
     type MealCategory,
@@ -54,6 +59,10 @@ export default function Home() {
         useState<PhotoContextMenuState | null>(null);
     const [rankingClusterId, setRankingClusterId] = useState<string | null>(null);
     const [rankingLaunching, setRankingLaunching] = useState(false);
+    const [rankingProgress, setRankingProgress] =
+        useState<RankingSessionStatus | null>(null);
+    const rankingSessionId = rankingProgress?.id ?? null;
+    const rankingSessionState = rankingProgress?.state ?? null;
     const inputRef = useRef<HTMLInputElement>(null);
     const objectUrls = useRef<string[]>([]);
 
@@ -70,6 +79,7 @@ export default function Home() {
                 const restored = await Promise.all(
                     savedClusters.map(async (cluster) => ({
                         ...cluster,
+                        ranked: cluster.ranked ?? false,
                         labelStatus:
                             cluster.labelStatus === "matching" ||
                                 cluster.labelStatus === "queued"
@@ -135,6 +145,28 @@ export default function Home() {
             window.removeEventListener("keydown", closeMenuOnEscape);
         };
     }, []);
+
+    useEffect(() => {
+        if (!rankingSessionId || rankingSessionState !== "running") return;
+        const controller = new AbortController();
+        const sessionId = rankingSessionId;
+        const interval = window.setInterval(() => {
+            void fetch(`/api/rank?sessionId=${encodeURIComponent(sessionId)}`, {
+                signal: controller.signal,
+            })
+                .then(async (response) => {
+                    if (!response.ok) return;
+                    const status = (await response.json()) as RankingSessionStatus;
+                    setRankingProgress(status);
+                })
+                .catch(() => undefined);
+        }, 700);
+
+        return () => {
+            controller.abort();
+            window.clearInterval(interval);
+        };
+    }, [rankingSessionId, rankingSessionState]);
 
     const chooseFiles = () => inputRef.current?.click();
 
@@ -264,6 +296,7 @@ export default function Home() {
                         {
                             id: crypto.randomUUID(),
                             photos: [photo],
+                            ranked: false,
                             labelStatus: "ready",
                             placesSearch: null,
                             match: null,
@@ -428,18 +461,186 @@ export default function Home() {
 
     const continueRanking = async (feedback: RankFeedback) => {
         if (!rankingClusterId || rankingLaunching) return;
+        const cluster = clusters.find((item) => item.id === rankingClusterId);
+        if (!cluster || !feedback.rating) return;
         setRankingLaunching(true);
 
         try {
+            const selectedCandidate = cluster.match?.candidates.find(
+                (candidate) => candidate.placeId === cluster.selection?.placeId,
+            );
+            const restaurantName =
+                cluster.selection?.name ?? cluster.match?.selected?.name ?? "";
+            const address =
+                selectedCandidate?.address ?? clusterCity(cluster) ?? "";
+            const takenAt = cluster.photos
+                .map((photo) => photo.takenAt)
+                .filter((value): value is number => value !== null)
+                .sort((first, second) => first - second)[0] ?? Date.now();
+            const date = new Date(takenAt);
+            const visitDate = [
+                date.getFullYear(),
+                String(date.getMonth() + 1).padStart(2, "0"),
+                String(date.getDate()).padStart(2, "0"),
+            ].join("-");
+            const formData = new FormData();
+            formData.set("clusterId", cluster.id);
+            formData.set("restaurantName", restaurantName);
+            formData.set("address", address);
+            formData.set("rating", feedback.rating);
+            formData.set("category", cluster.category ?? "Restaurant");
+            formData.set("description", feedback.description);
+            formData.set(
+                "photoDescriptions",
+                JSON.stringify(feedback.photoDescriptions),
+            );
+            formData.set("visitDate", visitDate);
+            for (const photo of cluster.photos) {
+                formData.append("photos", photo.blob, photo.name);
+            }
             const response = await fetch("/api/rank", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ clusterId: rankingClusterId, ...feedback }),
+                body: formData,
             });
-            if (!response.ok) throw new Error("Could not open ranking workspace");
-            setRankingClusterId(null);
+            const result = (await response.json()) as
+                | RankingSessionStatus
+                | { error?: string };
+            if (!response.ok) {
+                window.alert(
+                    "error" in result
+                        ? result.error ?? "Could not open ranking workspace"
+                        : "Could not open ranking workspace",
+                );
+                return;
+            }
+            setRankingProgress(result as RankingSessionStatus);
         } catch (error) {
-            console.error(error);
+            window.alert(
+                error instanceof Error
+                    ? error.message
+                    : "Could not open ranking workspace",
+            );
+        } finally {
+            setRankingLaunching(false);
+        }
+    };
+
+    const retryRanking = async (step: RankingStepId) => {
+        if (!rankingProgress || rankingLaunching) return;
+        setRankingLaunching(true);
+        try {
+            const response = await fetch("/api/rank", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sessionId: rankingProgress.id,
+                    step,
+                }),
+            });
+            const result = (await response.json()) as
+                | RankingSessionStatus
+                | { error?: string };
+            if (!response.ok) {
+                window.alert(
+                    "error" in result
+                        ? result.error ?? "Could not retry this step"
+                        : "Could not retry this step",
+                );
+                return;
+            }
+            setRankingProgress(result as RankingSessionStatus);
+        } catch (error) {
+            window.alert(
+                error instanceof Error
+                    ? error.message
+                    : "Could not retry this step",
+            );
+        } finally {
+            setRankingLaunching(false);
+        }
+    };
+
+    const reopenRankingPhone = async () => {
+        if (rankingLaunching) return;
+        setRankingLaunching(true);
+        try {
+            const response = await fetch("/api/rank/workspace", { method: "POST" });
+            const result = (await response.json()) as { error?: string };
+            if (!response.ok) {
+                window.alert(result.error ?? "Could not reopen the ranking workspace");
+            }
+        } catch (error) {
+            window.alert(
+                error instanceof Error
+                    ? error.message
+                    : "Could not reopen the ranking workspace",
+            );
+        } finally {
+            setRankingLaunching(false);
+        }
+    };
+
+    const toggleRankingPause = async () => {
+        if (!rankingProgress || rankingLaunching) return;
+        const action = rankingProgress.state === "paused" ? "resume" : "pause";
+        setRankingLaunching(true);
+        try {
+            const response = await fetch("/api/rank/control", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sessionId: rankingProgress.id,
+                    action,
+                }),
+            });
+            const result = (await response.json()) as
+                | RankingSessionStatus
+                | { error?: string };
+            if (!response.ok) {
+                window.alert(
+                    "error" in result
+                        ? result.error ?? `Could not ${action} ranking`
+                        : `Could not ${action} ranking`,
+                );
+                return;
+            }
+            setRankingProgress(result as RankingSessionStatus);
+        } catch (error) {
+            window.alert(
+                error instanceof Error
+                    ? error.message
+                    : `Could not ${action} ranking`,
+            );
+        } finally {
+            setRankingLaunching(false);
+        }
+    };
+
+    const skipRankingPhotos = async () => {
+        if (!rankingProgress || rankingLaunching) return;
+        setRankingLaunching(true);
+        try {
+            const response = await fetch("/api/rank", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sessionId: rankingProgress.id }),
+            });
+            const result = (await response.json()) as
+                | RankingSessionStatus
+                | { error?: string };
+            if (!response.ok) {
+                window.alert(
+                    "error" in result
+                        ? result.error ?? "Could not skip photos"
+                        : "Could not skip photos",
+                );
+                return;
+            }
+            setRankingProgress(result as RankingSessionStatus);
+        } catch (error) {
+            window.alert(
+                error instanceof Error ? error.message : "Could not skip photos",
+            );
         } finally {
             setRankingLaunching(false);
         }
@@ -450,6 +651,58 @@ export default function Home() {
     const rankingCluster = clusters.find(
         (cluster) => cluster.id === rankingClusterId,
     );
+
+    const closeRanking = () => {
+        setRankingClusterId(null);
+        setRankingProgress(null);
+    };
+
+    const cancelRanking = async () => {
+        if (!rankingProgress) {
+            closeRanking();
+            return;
+        }
+        if (rankingLaunching) return;
+        setRankingLaunching(true);
+        try {
+            const response = await fetch("/api/rank", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sessionId: rankingProgress.id }),
+            });
+            const result = (await response.json()) as
+                | RankingSessionStatus
+                | { error?: string };
+            if (!response.ok) {
+                window.alert(
+                    "error" in result
+                        ? result.error ?? "Could not cancel ranking"
+                        : "Could not cancel ranking",
+                );
+                return;
+            }
+            setRankingProgress(result as RankingSessionStatus);
+        } catch (error) {
+            window.alert(
+                error instanceof Error ? error.message : "Could not cancel ranking",
+            );
+        } finally {
+            setRankingLaunching(false);
+        }
+    };
+
+    const finishRanking = () => {
+        if (rankingClusterId) {
+            setClusters((current) =>
+                current.map((cluster) =>
+                    cluster.id === rankingClusterId
+                        ? { ...cluster, ranked: true }
+                        : cluster,
+                ),
+            );
+        }
+        closeRanking();
+    };
 
     return (
         <>
@@ -533,7 +786,10 @@ export default function Home() {
                                         void labelClusters([cluster]);
                                     }
                                 }}
-                                onOpenRanking={setRankingClusterId}
+                                onOpenRanking={(clusterId) => {
+                                    setRankingProgress(null);
+                                    setRankingClusterId(clusterId);
+                                }}
                             />
                         ))}
                     </div>
@@ -572,8 +828,15 @@ export default function Home() {
                     }
                     photos={rankingCluster.photos}
                     launching={rankingLaunching}
-                    onCancel={() => setRankingClusterId(null)}
+                    progress={rankingProgress}
+                    onCancel={closeRanking}
+                    onCancelProcess={() => void cancelRanking()}
                     onContinue={(feedback) => void continueRanking(feedback)}
+                    onReopenPhone={() => void reopenRankingPhone()}
+                    onTogglePause={() => void toggleRankingPause()}
+                    onRetry={(step) => void retryRanking(step)}
+                    onSkipPhotos={() => void skipRankingPhotos()}
+                    onFinished={finishRanking}
                 />
             ) : null}
         </>

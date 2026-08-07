@@ -1,21 +1,34 @@
 import { useEffect, useRef, useState } from "react";
 import { FaCheck } from "react-icons/fa6";
+import SquareLoader from "react-spinners/SquareLoader";
 
 import type { Photo } from "../lib/photo-types";
+import {
+    RANKING_STEPS,
+    type RankingSessionStatus,
+    type RankingStepId,
+} from "../lib/ranking-types";
 import { PhotoImage } from "./photo-image";
 
 export type RankFeedback = {
     rating: "liked" | "fine" | "disliked" | null;
     description: string;
-    dishNames: Record<string, string>;
+    photoDescriptions: string[];
 };
 
 type RankingOverlayProps = {
     restaurantName: string;
     photos: Photo[];
     launching: boolean;
+    progress: RankingSessionStatus | null;
     onCancel: () => void;
+    onCancelProcess: () => void;
     onContinue: (feedback: RankFeedback) => void;
+    onReopenPhone: () => void;
+    onTogglePause: () => void;
+    onRetry: (step: RankingStepId) => void;
+    onSkipPhotos: () => void;
+    onFinished: () => void;
 };
 
 const ratings = [
@@ -24,16 +37,33 @@ const ratings = [
     { value: "disliked", label: "I didn’t like it", color: "bg-[#efafb1]" },
 ] as const;
 
+const confetti = Array.from({ length: 42 }, (_, index) => ({
+    id: index,
+    left: `${(index * 37) % 100}%`,
+    delay: `${(index % 9) * 0.09}s`,
+    duration: `${1.8 + (index % 6) * 0.18}s`,
+    color: ["#134f5c", "#74b894", "#f6dda0", "#efafb1"][index % 4],
+}));
+
 export function RankingOverlay({
     restaurantName,
     photos,
     launching,
+    progress,
     onCancel,
+    onCancelProcess,
     onContinue,
+    onReopenPhone,
+    onTogglePause,
+    onRetry,
+    onSkipPhotos,
+    onFinished,
 }: RankingOverlayProps) {
     const [rating, setRating] = useState<RankFeedback["rating"]>(null);
     const [description, setDescription] = useState("");
-    const [dishNames, setDishNames] = useState<Record<string, string>>({});
+    const [photoDescriptions, setPhotoDescriptions] = useState<Record<string, string>>(
+        {},
+    );
     const dialogRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -42,7 +72,13 @@ export function RankingOverlay({
         dialogRef.current?.focus();
 
         const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-            if (event.key === "Escape") onCancel();
+            if (
+                event.key === "Escape" &&
+                progress?.state !== "running" &&
+                progress?.state !== "paused"
+            ) {
+                onCancel();
+            }
         };
         window.addEventListener("keydown", closeOnEscape);
 
@@ -50,11 +86,10 @@ export function RankingOverlay({
             document.body.style.overflow = previousOverflow;
             window.removeEventListener("keydown", closeOnEscape);
         };
-    }, [onCancel]);
+    }, [onCancel, progress?.state]);
 
-    const updateDishName = (photoId: string, name: string) => {
-        setDishNames((current) => ({ ...current, [photoId]: name }));
-    };
+    const showingProgress = progress !== null;
+    const completed = progress?.state === "complete";
 
     return (
         <div
@@ -69,87 +104,237 @@ export function RankingOverlay({
                 <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-10 sm:py-10">
                     <div className="grid grid-cols-2 gap-x-5 gap-y-8 2xl:grid-cols-3">
                         {photos.map((photo) => (
-                            <label className="block min-w-0" key={photo.id}>
+                            <div className="block min-w-0" key={photo.id}>
                                 <span className="relative block aspect-square w-full overflow-hidden bg-neutral-100">
                                     <PhotoImage photo={photo} alt="" />
                                 </span>
                                 <input
-                                    className="mt-3 w-full bg-transparent px-0 py-2 text-sm font-normal text-neutral-950 placeholder:text-neutral-400 focus-visible:outline-none"
+                                    className="mt-3 w-full rounded-sm bg-neutral-100 px-4 py-3 text-sm text-neutral-950 outline-none placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950"
+                                    aria-label={`Dish description for ${photo.name}`}
                                     type="text"
-                                    value={dishNames[photo.id] ?? ""}
-                                    placeholder="Name this dish"
-                                    aria-label={`Name dish in ${photo.name}`}
-                                    onChange={(event) =>
-                                        updateDishName(photo.id, event.target.value)
-                                    }
+                                    disabled={showingProgress}
+                                    value={photoDescriptions[photo.id] ?? ""}
+                                    placeholder="Menu"
+                                    onChange={(event) => {
+                                        const value = event.target.value;
+                                        setPhotoDescriptions((current) => ({
+                                            ...current,
+                                            [photo.id]: value,
+                                        }));
+                                    }}
                                 />
-                            </label>
+                            </div>
                         ))}
                     </div>
                 </div>
             </section>
 
-            <section className="min-h-0 overflow-y-auto bg-white px-6 py-8 sm:px-10 sm:py-10 lg:px-12 lg:py-14">
-                <h2
-                    className="m-0 text-2xl font-semibold tracking-[-0.025em] text-neutral-950"
-                    id="ranking-title"
-                >
-                    How was {restaurantName}?
-                </h2>
-
-                <div className="mt-10 flex flex-col gap-5">
-                    {ratings.map((option) => {
-                        const selected = rating === option.value;
-                        return (
-                            <button
-                                className="flex items-center gap-4 bg-transparent text-left text-sm font-semibold text-neutral-700"
-                                type="button"
-                                aria-pressed={selected}
-                                key={option.value}
-                                onClick={() => setRating(option.value)}
-                            >
-                                <span
-                                    className={`grid size-16 shrink-0 place-items-center rounded-full ${option.color} transition-transform hover:scale-105`}
-                                    aria-hidden="true"
+            <section className="relative min-h-0 overflow-y-auto bg-white px-6 py-8 sm:px-10 sm:py-10 lg:px-12 lg:py-14">
+                {showingProgress ? (
+                    <div className="flex min-h-full flex-col" aria-live="polite">
+                        <h2
+                            className="m-0 text-2xl font-semibold tracking-[-0.025em] text-neutral-950"
+                            id="ranking-title"
+                        >
+                            Ranking {restaurantName}
+                        </h2>
+                        {!completed ? (
+                            <div className="mt-5 flex flex-wrap gap-3">
+                                <button
+                                    className="rounded-sm bg-neutral-100 px-4 py-2 text-sm text-neutral-800 transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                                    type="button"
+                                    disabled={launching}
+                                    onClick={onReopenPhone}
                                 >
-                                    {selected ? (
-                                        <FaCheck className="size-6 text-white" />
+                                    Reopen phone
+                                </button>
+                                {progress.state === "running" || progress.state === "paused" ? (
+                                    <button
+                                        className="rounded-sm bg-neutral-100 px-4 py-2 text-sm text-neutral-800 transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                                        type="button"
+                                        disabled={launching}
+                                        onClick={onTogglePause}
+                                    >
+                                        {progress.state === "paused" ? "Resume" : "Pause"}
+                                    </button>
+                                ) : null}
+                                {progress.state === "running" || progress.state === "paused" ? (
+                                    <button
+                                        className="rounded-sm bg-neutral-100 px-4 py-2 text-sm text-neutral-800 transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                                        type="button"
+                                        disabled={launching}
+                                        onClick={onCancelProcess}
+                                    >
+                                        Cancel
+                                    </button>
+                                ) : (
+                                    <button
+                                        className="rounded-sm bg-neutral-100 px-4 py-2 text-sm text-neutral-800 transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                                        type="button"
+                                        disabled={launching}
+                                        onClick={onCancel}
+                                    >
+                                        Close
+                                    </button>
+                                )}
+                            </div>
+                        ) : null}
+
+                        <ul className="mt-10 flex list-none flex-col gap-5 p-0">
+                            {RANKING_STEPS.filter(
+                                (step) =>
+                                    progress.steps[step.id] !== "pending" || completed,
+                            ).map((step) => {
+                                const state = progress.steps[step.id];
+                                return (
+                                    <li
+                                        className={`group/step flex items-center gap-3 text-sm ${state === "complete" ? "text-neutral-400" : "text-neutral-900"}`}
+                                        key={step.id}
+                                    >
+                                        {state === "active" && progress.state === "running" ? (
+                                            <SquareLoader
+                                                color="var(--color-accent)"
+                                                size={16}
+                                                speedMultiplier={1.15}
+                                                aria-label="In progress"
+                                            />
+                                        ) : (
+                                            <span
+                                                className="size-4 rounded-full bg-neutral-300"
+                                                aria-hidden="true"
+                                            />
+                                        )}
+                                        <span>{step.label}</span>
+                                        <button
+                                            className="ml-auto rounded-xs bg-neutral-100 px-2.5 py-1.5 text-xs text-neutral-600 opacity-0 transition-[opacity,background-color] hover:bg-neutral-200 group-hover/step:opacity-100 group-focus-within/step:opacity-100 disabled:cursor-default disabled:opacity-0"
+                                            type="button"
+                                            disabled={launching}
+                                            onClick={() => onRetry(step.id)}
+                                        >
+                                            Retry from here
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+
+                        {progress.state === "error" ? (
+                            <div className="mt-auto pt-10">
+                                <p className="text-sm text-neutral-600">
+                                    {progress.error}
+                                </p>
+                                <div className="mt-5 flex gap-3">
+                                    {progress.recovery === "skip_photos" ? (
+                                        <button
+                                            className="rounded-sm bg-accent px-6 py-3 text-sm text-white transition-colors hover:bg-accent/85 disabled:opacity-50"
+                                            type="button"
+                                            disabled={launching}
+                                            onClick={onSkipPhotos}
+                                        >
+                                            Skip photos
+                                        </button>
                                     ) : null}
-                                </span>
-                                <span>{option.label}</span>
+                                </div>
+                            </div>
+                        ) : null}
+
+                        {completed ? (
+                            <button
+                                className="mt-auto rounded-sm bg-accent px-6 py-3 text-sm text-white transition-colors hover:bg-accent/85"
+                                type="button"
+                                onClick={onFinished}
+                            >
+                                Yay
                             </button>
-                        );
-                    })}
-                </div>
+                        ) : null}
 
-                <textarea
-                    className="mt-10 min-h-48 w-full resize-none rounded-sm bg-neutral-100 p-4 text-sm font-normal text-neutral-950 outline-none placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950"
-                    aria-label="Description"
-                    value={description}
-                    placeholder="Add a description (optional)"
-                    onChange={(event) => setDescription(event.target.value)}
-                />
+                        {completed ? (
+                            <div className="pointer-events-none fixed inset-0 z-[220] overflow-hidden" aria-hidden="true">
+                                {confetti.map((piece) => (
+                                    <span
+                                        className="ranking-confetti absolute -top-8 h-4 w-2"
+                                        key={piece.id}
+                                        style={{
+                                            left: piece.left,
+                                            animationDelay: piece.delay,
+                                            animationDuration: piece.duration,
+                                            backgroundColor: piece.color,
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        ) : null}
+                    </div>
+                ) : (
+                    <>
+                        <h2
+                            className="m-0 text-2xl font-semibold tracking-[-0.025em] text-neutral-950"
+                            id="ranking-title"
+                        >
+                            How was {restaurantName}?
+                        </h2>
 
-                <div className="mt-5 flex gap-3">
-                    <button
-                        className="rounded-sm bg-neutral-100 px-6 py-3 text-sm text-neutral-800 transition-colors hover:bg-neutral-200 disabled:opacity-50"
-                        type="button"
-                        disabled={launching}
-                        onClick={onCancel}
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        className="rounded-sm bg-accent px-6 py-3 text-sm text-white transition-colors hover:bg-accent/85 disabled:opacity-50"
-                        type="button"
-                        disabled={launching || !rating}
-                        onClick={() =>
-                            onContinue({ rating, description, dishNames })
-                        }
-                    >
-                        Continue
-                    </button>
-                </div>
+                        <div className="mt-10 flex flex-col gap-5">
+                            {ratings.map((option) => {
+                                const selected = rating === option.value;
+                                return (
+                                    <button
+                                        className="flex items-center gap-4 bg-transparent text-left text-sm font-semibold text-neutral-700"
+                                        type="button"
+                                        aria-pressed={selected}
+                                        key={option.value}
+                                        onClick={() => setRating(option.value)}
+                                    >
+                                        <span
+                                            className={`grid size-16 shrink-0 place-items-center rounded-full ${option.color} transition-transform hover:scale-105`}
+                                            aria-hidden="true"
+                                        >
+                                            {selected ? (
+                                                <FaCheck className="size-6 text-white" />
+                                            ) : null}
+                                        </span>
+                                        <span>{option.label}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <textarea
+                            className="mt-10 min-h-48 w-full resize-none rounded-sm bg-neutral-100 p-4 text-sm font-normal text-neutral-950 outline-none placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950"
+                            aria-label="Description"
+                            value={description}
+                            placeholder="Add a description (optional)"
+                            onChange={(event) => setDescription(event.target.value)}
+                        />
+
+                        <div className="mt-5 flex gap-3">
+                            <button
+                                className="rounded-sm bg-neutral-100 px-6 py-3 text-sm text-neutral-800 transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                                type="button"
+                                disabled={launching}
+                                onClick={onCancel}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="rounded-sm bg-accent px-6 py-3 text-sm text-white transition-colors hover:bg-accent/85 disabled:opacity-50"
+                                type="button"
+                                disabled={launching || !rating}
+                                onClick={() =>
+                                    onContinue({
+                                        rating,
+                                        description,
+                                        photoDescriptions: photos.map((photo) =>
+                                            photoDescriptions[photo.id]?.trim() || "Menu"
+                                        ),
+                                    })
+                                }
+                            >
+                                Continue
+                            </button>
+                        </div>
+                    </>
+                )}
             </section>
         </div>
     );

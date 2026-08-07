@@ -208,6 +208,7 @@ export function clusterPhotos(photos: Photo[]) {
       clusters.push({
         id: crypto.randomUUID(),
         photos: [photo],
+        ranked: false,
         labelStatus: "ready",
         placesSearch: null,
         match: null,
@@ -246,6 +247,7 @@ export function addPhotosToClusters(
       clusters.push({
         id: crypto.randomUUID(),
         photos: [photo],
+        ranked: false,
         labelStatus: "ready",
         placesSearch: null,
         match: null,

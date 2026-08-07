@@ -82,7 +82,7 @@ export function PhotoClusterCard({
 
     return (
         <article
-            className={`group/card relative flex h-full rounded-lg min-w-0 flex-col gap-5 bg-neutral-100 p-6 text-neutral-950 transition-colors duration-200 ${isDropTarget ? "bg-accent/20" : "hover:bg-neutral-200"}`}
+            className={`group/card relative flex h-full min-w-0 flex-col gap-5 overflow-hidden rounded-lg bg-neutral-100 p-6 text-neutral-950 transition-colors duration-200 ${isDropTarget ? "bg-accent/20" : cluster.ranked ? "bg-neutral-200 grayscale" : "hover:bg-neutral-200"}`}
             title={cluster.labelError ?? undefined}
             onDragEnter={(event) => {
                 if (!isPhotoDrag(event)) return;
@@ -283,11 +283,16 @@ export function PhotoClusterCard({
 
             {cluster.match ? (
                 <button
-                    className="rounded-sm bg-accent px-3 py-2 text-sm text-white transition-colors hover:bg-accent/85"
+                    className={
+                        cluster.ranked
+                            ? "rounded-sm bg-neutral-300 px-3 py-2 text-sm text-neutral-500"
+                            : "rounded-sm bg-accent px-3 py-2 text-sm text-white transition-colors hover:bg-accent/85"
+                    }
                     type="button"
+                    disabled={cluster.ranked}
                     onClick={() => onOpenRanking(cluster.id)}
                 >
-                    Rank
+                    {cluster.ranked ? "Ranked" : "Rank"}
                 </button>
             ) : null}
 

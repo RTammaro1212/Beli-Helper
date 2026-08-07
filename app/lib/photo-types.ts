@@ -38,6 +38,7 @@ export type ClusterLabelStatus =
 export type PhotoCluster = {
   id: string;
   photos: Photo[];
+  ranked: boolean;
   labelStatus: ClusterLabelStatus;
   placesSearch: PlacesSearchResult | null;
   match: LabelMatch | null;

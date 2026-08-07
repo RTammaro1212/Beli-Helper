@@ -57,8 +57,31 @@ select:focus-visible {
     animation: queued-pulse 1.4s ease-in-out infinite;
 }
 
+@keyframes ranking-confetti-fall {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, -4vh, 0) rotate(0deg);
+    }
+    10% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(32px, 108vh, 0) rotate(620deg);
+    }
+}
+
+.ranking-confetti {
+    animation: ranking-confetti-fall 2.2s ease-in forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .queued-pulse {
         animation: none;
+    }
+
+    .ranking-confetti {
+        animation: none;
+        display: none;
     }
 }
