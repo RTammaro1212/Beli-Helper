@@ -11,7 +11,10 @@ import { EmptyUpload } from "./components/empty-upload";
 import { OrganizerHeader } from "./components/organizer-header";
 import { PhotoClusterCard } from "./components/photo-cluster-card";
 import { PhotoContextMenu } from "./components/photo-context-menu";
-import type { RankFeedback } from "./components/ranking-overlay";
+import {
+    type RankFeedback,
+    RankingOverlay,
+} from "./components/ranking-overlay";
 import {
     addPhotosToClusters,
     checksumBlob,
@@ -444,22 +447,32 @@ export default function Home() {
 
     const hasPhotos = clusters.length > 0;
     const unlabeledClusters = clusters.filter((cluster) => !cluster.match);
+    const rankingCluster = clusters.find(
+        (cluster) => cluster.id === rankingClusterId,
+    );
 
     return (
-        <main
-            className="relative min-h-screen bg-white px-6 pb-24 font-sans text-neutral-950"
-            onDragEnter={(event) => {
-                event.preventDefault();
-                if (!Array.from(event.dataTransfer.types).includes(PHOTO_DRAG_TYPE)) {
-                    setDraggingOver(true);
-                }
-            }}
-            onDragOver={(event) => event.preventDefault()}
-            onDragLeave={(event) => {
-                if (event.currentTarget === event.target) setDraggingOver(false);
-            }}
-            onDrop={handlePageDrop}
-        >
+        <>
+            <main
+                className="relative min-h-screen bg-white px-6 pb-24 font-sans text-neutral-950"
+                onDragEnter={(event) => {
+                    event.preventDefault();
+                    if (
+                        !Array.from(event.dataTransfer.types).includes(
+                            PHOTO_DRAG_TYPE,
+                        )
+                    ) {
+                        setDraggingOver(true);
+                    }
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDragLeave={(event) => {
+                    if (event.currentTarget === event.target) {
+                        setDraggingOver(false);
+                    }
+                }}
+                onDrop={handlePageDrop}
+            >
             <input
                 ref={inputRef}
                 className="sr-only"
@@ -520,13 +533,7 @@ export default function Home() {
                                         void labelClusters([cluster]);
                                     }
                                 }}
-                                ranking={rankingClusterId === cluster.id}
-                                rankingLaunching={rankingLaunching}
                                 onOpenRanking={setRankingClusterId}
-                                onCancelRanking={() => setRankingClusterId(null)}
-                                onContinueRanking={(feedback) =>
-                                    void continueRanking(feedback)
-                                }
                             />
                         ))}
                     </div>
@@ -554,6 +561,21 @@ export default function Home() {
                     <span>Drop to add photos</span>
                 </div>
             ) : null}
-        </main>
+            </main>
+
+            {rankingCluster ? (
+                <RankingOverlay
+                    restaurantName={
+                        rankingCluster.selection?.name ??
+                        rankingCluster.match?.selected?.name ??
+                        "it"
+                    }
+                    photos={rankingCluster.photos}
+                    launching={rankingLaunching}
+                    onCancel={() => setRankingClusterId(null)}
+                    onContinue={(feedback) => void continueRanking(feedback)}
+                />
+            ) : null}
+        </>
     );
 }

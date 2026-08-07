@@ -8,7 +8,6 @@ import type { MealCategory, RestaurantSelection } from "../lib/stack-schema";
 import { MealCategoryMenu } from "./meal-category-menu";
 import { PhotoImage } from "./photo-image";
 import { PlaceCombobox } from "./place-combobox";
-import { type RankFeedback, RankingOverlay } from "./ranking-overlay";
 
 const STACK_ANGLES = [0, -6, 7] as const;
 const STACK_OFFSETS = [
@@ -39,11 +38,7 @@ type PhotoClusterCardProps = {
     onSelectCategory: (clusterId: string, category: MealCategory) => void;
     labeling: boolean;
     onLabel: (clusterId: string) => void;
-    ranking: boolean;
-    rankingLaunching: boolean;
     onOpenRanking: (clusterId: string) => void;
-    onCancelRanking: () => void;
-    onContinueRanking: (feedback: RankFeedback) => void;
 };
 
 function isPhotoDrag(event: DragEvent<HTMLElement>) {
@@ -65,11 +60,7 @@ export function PhotoClusterCard({
     onSelectCategory,
     labeling,
     onLabel,
-    ranking,
-    rankingLaunching,
     onOpenRanking,
-    onCancelRanking,
-    onContinueRanking,
 }: PhotoClusterCardProps) {
     const stackPhotos = cluster.photos.slice(0, 3);
     const candidates = cluster.match?.candidates ?? [];
@@ -298,14 +289,6 @@ export function PhotoClusterCard({
                 >
                     Rank
                 </button>
-            ) : null}
-
-            {ranking ? (
-                <RankingOverlay
-                    launching={rankingLaunching}
-                    onCancel={onCancelRanking}
-                    onContinue={onContinueRanking}
-                />
             ) : null}
 
             {cluster.labelStatus === "matching" ? (
