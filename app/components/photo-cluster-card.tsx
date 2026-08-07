@@ -48,6 +48,8 @@ type PhotoClusterCardProps = {
         selection: RestaurantSelection,
     ) => void;
     onSelectCategory: (clusterId: string, category: MealCategory) => void;
+    labeling: boolean;
+    onLabel: (clusterId: string) => void;
 };
 
 function isPhotoDrag(event: DragEvent<HTMLElement>) {
@@ -67,11 +69,12 @@ export function PhotoClusterCard({
     onOpenContextMenu,
     onSelectRestaurant,
     onSelectCategory,
+    labeling,
+    onLabel,
 }: PhotoClusterCardProps) {
     const stackPhotos = cluster.photos.slice(0, 3);
-    const topPhoto = stackPhotos[0];
     const city = clusterCity(cluster);
-    const hasPlaceDetails = Boolean(cluster.selection || cluster.category || city);
+    const canLabel = !cluster.match && !labeling;
 
     const handlePreviewKeyDown = (
         event: KeyboardEvent<HTMLDivElement>,
@@ -85,7 +88,7 @@ export function PhotoClusterCard({
 
     return (
         <article
-            className={`relative min-w-0 p-3 transition-colors ${isDropTarget ? "bg-[#d9f5dc]" : "hover:bg-[#f7f8f6]"
+            className={`group/card relative min-w-0 p-3 transition-colors flex flex-col gap-4 bg-transparent ${isDropTarget ? "bg-green-200" : "hover:bg-stone-200"
                 }`}
             title={cluster.labelError ?? undefined}
             onDragEnter={(event) => {
@@ -117,13 +120,26 @@ export function PhotoClusterCard({
                 if (photoId) onMovePhoto(photoId, cluster.id);
             }}
         >
-            {hasPlaceDetails ? (
-                <div className="relative z-[80] mb-5 text-left">
+            <div
+                className={`relative z-[80] mb-4 min-h-[54px] text-left ${canLabel ? "pr-16" : ""}`}
+            >
+                {cluster.selection ? (
                     <PlaceCombobox
                         candidates={cluster.match?.candidates ?? []}
                         selection={cluster.selection}
                         onSelect={(selection) => onSelectRestaurant(cluster.id, selection)}
                     />
+                ) : null}
+                {canLabel ? (
+                    <button
+                        className="absolute right-0 top-0 bg-[#e5f3e6] px-2.5 py-1 font-sans text-[13px] text-[#087e2b] opacity-0 transition-opacity hover:opacity-80 focus:opacity-100 group-hover/card:opacity-100"
+                        type="button"
+                        onClick={() => onLabel(cluster.id)}
+                    >
+                        Label
+                    </button>
+                ) : null}
+                {cluster.category || city ? (
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                         {cluster.category ? (
                             <MealCategoryMenu
@@ -132,28 +148,39 @@ export function PhotoClusterCard({
                             />
                         ) : null}
                         {city ? (
-                            <p className="m-0 font-sans text-[14px] text-[#788079]">
+                            <p className="m-0 font-sans text-[14px] font-extralight text-[#59605a]">
                                 {city}
                             </p>
                         ) : null}
                     </div>
-                </div>
-            ) : null}
+                ) : null}
+            </div>
 
             <div
-                className="group relative mx-auto mb-6 aspect-square w-[min(82%,260px)] cursor-grab active:cursor-grabbing"
-                draggable
-                onDragStart={(event) => onStartDrag(event, topPhoto.id)}
-                onDragEnd={onEndDrag}
-                onContextMenu={(event) =>
-                    onOpenContextMenu(event, cluster.id, topPhoto.id)
-                }
-                aria-label={`Drag ${topPhoto.name} to another cluster`}
+                className="group relative mx-auto mb-6 aspect-square w-[min(82%,260px)]"
             >
                 {stackPhotos.map((photo, index) => (
                     <span
-                        className="absolute inset-0 block origin-center overflow-hidden bg-[#f2f6f1] transition-transform duration-200"
+                        className={`absolute inset-0 block origin-center overflow-hidden bg-[#f2f6f1] transition-transform duration-200 ${index === 0 ? "cursor-grab active:cursor-grabbing" : ""}`}
                         key={photo.id}
+                        draggable={index === 0}
+                        onDragStart={
+                            index === 0
+                                ? (event) => onStartDrag(event, photo.id)
+                                : undefined
+                        }
+                        onDragEnd={index === 0 ? onEndDrag : undefined}
+                        onContextMenu={
+                            index === 0
+                                ? (event) =>
+                                    onOpenContextMenu(event, cluster.id, photo.id)
+                                : undefined
+                        }
+                        aria-label={
+                            index === 0
+                                ? `Drag ${photo.name} to another cluster`
+                                : undefined
+                        }
                         style={{
                             zIndex: stackPhotos.length - index,
                             transform:
@@ -168,7 +195,7 @@ export function PhotoClusterCard({
                 <span className="absolute -bottom-[13px] -right-[13px] z-50 grid size-[43px] place-items-center bg-[#1c9c42] text-[17px] text-white">
                     {cluster.photos.length}
                 </span>
-                <span className="absolute bottom-2 left-2 z-50 bg-[rgba(27,36,28,0.78)] px-2 py-1 font-sans text-[13px] text-white">
+                <span className="absolute bottom-2 left-2 z-50 bg-[rgba(27,36,28,0.78)] px-2 py-1 font-sans text-[13px] font-extralight text-white">
                     {formatClusterDate(cluster)}
                 </span>
             </div>

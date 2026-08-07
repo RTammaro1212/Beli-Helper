@@ -1,70 +1,72 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-crimson-pro);
+    --font-serif: var(--font-crimson-pro);
+    --font-sans: var(--font-stack-sans-text);
 }
 
 :root {
-  --background: #ffffff;
-  --surface: #f2f6f1;
-  --surface-active: #e5f3e6;
-  --ink: #1b241c;
-  --muted: #78837a;
-  --accent: #1c9c42;
-  --accent-strong: #087e2b;
-  --accent-soft: #b3efbb;
-  --accent-pale: #d9f5dc;
+    --background: #ffffff;
+    --surface: #f2f6f1;
+    --surface-active: #e5f3e6;
+    --ink: #1b241c;
+    --muted: #78837a;
+    --accent: #1c9c42;
+    --accent-strong: #087e2b;
+    --accent-soft: #b3efbb;
+    --accent-pale: #d9f5dc;
 }
 
 html {
-  min-width: 320px;
-  background: var(--background);
+    min-width: 320px;
+    background: var(--background);
 }
 
 body {
-  min-height: 100vh;
-  margin: 0;
-  background: var(--background);
-  color: var(--ink);
-  font-family: var(--font-crimson-pro), Georgia, serif;
-  -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    margin: 0;
+    background: var(--background);
+    color: var(--ink);
+    font-family: var(--font-crimson-pro), Georgia, serif;
+    -webkit-font-smoothing: antialiased;
 }
 
 button {
-  cursor: pointer;
+    cursor: pointer;
+    font-family: var(--font-stack-sans-text), sans-serif;
+    font-weight: 700;
 }
 
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
+    outline: none;
 }
 
 .no-scrollbar {
-  scrollbar-width: none;
+    scrollbar-width: none;
 }
 
 .no-scrollbar::-webkit-scrollbar {
-  display: none;
+    display: none;
 }
 
 @keyframes queued-pulse {
-  0%,
-  100% {
-    opacity: 0.72;
-  }
-  50% {
-    opacity: 1;
-  }
+    0%,
+    100% {
+        opacity: 0.72;
+    }
+    50% {
+        opacity: 1;
+    }
 }
 
 .queued-pulse {
-  animation: queued-pulse 1.4s ease-in-out infinite;
+    animation: queued-pulse 1.4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .queued-pulse {
-    animation: none;
-  }
+    .queued-pulse {
+        animation: none;
+    }
 }

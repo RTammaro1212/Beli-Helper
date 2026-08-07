@@ -4,6 +4,8 @@ type OrganizerHeaderProps = {
   hasPhotos: boolean;
   processing: boolean;
   labeling: boolean;
+  mealCount: number;
+  unlabeledCount: number;
   onChooseFiles: () => void;
   onClear: () => void;
   onLabel: () => void;
@@ -13,10 +15,17 @@ export function OrganizerHeader({
   hasPhotos,
   processing,
   labeling,
+  mealCount,
+  unlabeledCount,
   onChooseFiles,
   onClear,
   onLabel,
 }: OrganizerHeaderProps) {
+  const labelText =
+    unlabeledCount === mealCount
+      ? "Label all"
+      : `Label ${unlabeledCount} meal${unlabeledCount === 1 ? "" : "s"}`;
+
   return (
     <header className="relative z-10 mx-auto grid min-h-[92px] w-full max-w-7xl grid-cols-[1fr_auto_1fr] items-center max-[680px]:min-h-[78px]">
       <div className="flex items-center gap-2 justify-self-start">
@@ -48,14 +57,14 @@ export function OrganizerHeader({
         Auto Beli
       </Link>
 
-      {hasPhotos ? (
+      {unlabeledCount > 0 ? (
         <button
           className="w-fit justify-self-end bg-[#1c9c42] px-4 py-2 font-sans text-[15px] text-white transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 max-[680px]:px-3"
           type="button"
           disabled={processing || labeling}
           onClick={onLabel}
         >
-          {labeling ? "Labeling…" : "Label"}
+          {labeling ? "Labeling…" : labelText}
         </button>
       ) : null}
     </header>

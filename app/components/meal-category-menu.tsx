@@ -29,7 +29,7 @@ export function MealCategoryMenu({
       }}
     >
       <button
-        className="flex items-center gap-2 bg-[#efeee9] px-2.5 py-1 text-[14px] text-[#4f5650] transition-colors hover:bg-[#e6e4de]"
+        className="bg-[#dfded9] px-2.5 py-1 text-[14px] text-[#303531] transition-colors hover:bg-[#d3d2cd] focus:bg-[#d3d2cd]"
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -39,21 +39,20 @@ export function MealCategoryMenu({
           if (event.key === "Escape") setOpen(false);
         }}
       >
-        <span>{value}</span>
-        <span aria-hidden="true">⌄</span>
+        {value}
       </button>
 
       {open ? (
         <div
           id={menuId}
-          className="absolute left-0 top-full z-[90] mt-1 min-w-[190px] bg-[#f5f4f0] p-1.5"
+          className="absolute left-0 top-full z-[90] mt-1 min-w-[190px] bg-[#deddd8] p-1.5"
           role="listbox"
           aria-label="Meal category"
         >
           {MEAL_CATEGORIES.map((category) => (
             <button
               key={category}
-              className="block w-full bg-transparent px-2.5 py-2 text-left text-[14px] text-[#303531] transition-colors hover:bg-[#e8e6e0]"
+              className="block w-full bg-transparent px-2.5 py-2 text-left text-[14px] text-[#242925] transition-colors hover:bg-white focus:bg-white"
               type="button"
               role="option"
               aria-selected={category === value}

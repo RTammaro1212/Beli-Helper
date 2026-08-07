@@ -286,22 +286,23 @@ export default function Home() {
         );
     };
 
-    const labelClusters = async () => {
-        if (!clusters.length || labeling) return;
+    const labelClusters = async (targets: PhotoCluster[]) => {
+        if (!targets.length || labeling) return;
+        const targetIds = new Set(targets.map((cluster) => cluster.id));
         const runId = crypto.randomUUID();
         setLabeling(true);
-        setMessage(`Labeling ${clusters.length} meal${clusters.length === 1 ? "" : "s"}…`);
+        setMessage(`Labeling ${targets.length} meal${targets.length === 1 ? "" : "s"}…`);
         setClusters((current) =>
-            current.map((cluster) => ({
-                ...cluster,
-                labelStatus: "queued",
-                labelError: null,
-            })),
+            current.map((cluster) =>
+                targetIds.has(cluster.id)
+                    ? { ...cluster, labelStatus: "queued", labelError: null }
+                    : cluster,
+            ),
         );
 
         let completed = 0;
         let failed = 0;
-        for (const cluster of clusters) {
+        for (const cluster of targets) {
             setClusters((current) =>
                 current.map((item) =>
                     item.id === cluster.id
@@ -364,8 +365,8 @@ export default function Home() {
             completed += 1;
             setMessage(
                 failed
-                    ? `${completed} of ${clusters.length} checked · ${failed} needs attention`
-                    : `${completed} of ${clusters.length} meals labeled`,
+                    ? `${completed} of ${targets.length} checked · ${failed} needs attention`
+                    : `${completed} of ${targets.length} meals labeled`,
             );
         }
 
@@ -404,6 +405,7 @@ export default function Home() {
     };
 
     const hasPhotos = clusters.length > 0;
+    const unlabeledClusters = clusters.filter((cluster) => !cluster.match);
 
     return (
         <main
@@ -433,9 +435,11 @@ export default function Home() {
                 hasPhotos={hasPhotos}
                 processing={processing}
                 labeling={labeling}
+                mealCount={clusters.length}
+                unlabeledCount={unlabeledClusters.length}
                 onChooseFiles={chooseFiles}
                 onClear={clearAll}
-                onLabel={() => void labelClusters()}
+                onLabel={() => void labelClusters(unlabeledClusters)}
             />
 
             {hasPhotos ? (
@@ -451,7 +455,7 @@ export default function Home() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,290px),1fr))] items-start gap-x-[clamp(28px,4vw,58px)] gap-y-[60px] max-[680px]:gap-y-[48px]">
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,290px),1fr))] items-start gap-4">
                         {clusters.map((cluster) => (
                             <PhotoClusterCard
                                 key={cluster.id}
@@ -467,6 +471,15 @@ export default function Home() {
                                 onOpenContextMenu={openPhotoContextMenu}
                                 onSelectRestaurant={selectRestaurant}
                                 onSelectCategory={selectCategory}
+                                labeling={labeling}
+                                onLabel={(clusterId) => {
+                                    const cluster = clusters.find(
+                                        (item) => item.id === clusterId,
+                                    );
+                                    if (cluster && !cluster.match) {
+                                        void labelClusters([cluster]);
+                                    }
+                                }}
                             />
                         ))}
                     </div>
