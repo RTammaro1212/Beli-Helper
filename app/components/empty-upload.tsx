@@ -48,7 +48,7 @@ export function EmptyUpload({
       >
         {placeholderImages.map(({ src, className }, index) => (
           <span
-            className={`absolute block aspect-square w-[clamp(128px,20vw,205px)] overflow-hidden bg-[#f4f4f1] outline-1 outline-[#d7dcd6] transition-transform duration-300 ${className}`}
+            className={`absolute block aspect-square w-[clamp(128px,20vw,205px)] overflow-hidden bg-[#f4f4f1] transition-transform duration-300 ${className}`}
             key={src}
           >
             <Image

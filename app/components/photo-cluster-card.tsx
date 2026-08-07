@@ -110,7 +110,7 @@ export function PhotoClusterCard({
       >
         {stackPhotos.map((photo, index) => (
           <span
-            className="absolute inset-0 block origin-center overflow-hidden bg-[#f2f6f1] outline-1 outline-[#d7dcd6] transition-transform duration-200"
+            className="absolute inset-0 block origin-center overflow-hidden bg-[#f2f6f1] transition-transform duration-200"
             key={photo.id}
             style={{
               zIndex: stackPhotos.length - index,
@@ -140,7 +140,7 @@ export function PhotoClusterCard({
       >
         {cluster.photos.map((photo) => (
           <div
-            className="group/preview relative aspect-square cursor-grab overflow-hidden bg-[#f2f6f1] opacity-80 outline-1 outline-[#d7dcd6] transition duration-150 hover:z-10 hover:-translate-y-[3px] hover:opacity-100 active:cursor-grabbing"
+            className="group/preview relative aspect-square cursor-grab overflow-hidden bg-[#f2f6f1] opacity-80 transition duration-150 hover:z-10 hover:-translate-y-[3px] hover:opacity-100 active:cursor-grabbing"
             key={photo.id}
             draggable
             role="button"
