@@ -84,7 +84,8 @@ export async function POST(request: Request) {
     : inputPath;
 
   try {
-    await writeFile(inputPath, Buffer.from(await upload.arrayBuffer()));
+    const input = Buffer.from(await upload.arrayBuffer());
+    await writeFile(inputPath, input);
 
     if (isHeic) {
       await execFileAsync("/usr/bin/sips", [
@@ -100,14 +101,14 @@ export async function POST(request: Request) {
       ]);
     }
 
-    const metadataPath = isHeic ? outputPath : inputPath;
+    const output = isHeic ? await readFile(outputPath) : input;
 
     let takenAt: number | null = null;
     let latitude: number | null = null;
     let longitude: number | null = null;
 
     try {
-      const metadata = await exifr.parse(metadataPath, {
+      const metadata = await exifr.parse(output, {
         pick: ["DateTimeOriginal", "CreateDate", "ModifyDate"],
       });
       takenAt = validTimestamp(
@@ -118,14 +119,13 @@ export async function POST(request: Request) {
     }
 
     try {
-      const gps = await exifr.gps(metadataPath);
+      const gps = await exifr.gps(output);
       if (Number.isFinite(gps?.latitude)) latitude = gps.latitude;
       if (Number.isFinite(gps?.longitude)) longitude = gps.longitude;
     } catch {
       // Location is optional.
     }
 
-    const output = await readFile(outputPath);
     const outputName = isHeic
       ? replaceExtension(originalName, ".jpg")
       : originalName;
@@ -135,6 +135,17 @@ export async function POST(request: Request) {
     const mediaType = isHeic
       ? "image/jpeg"
       : mediaTypeFor(extension, upload.type);
+    const effectiveTakenAt = takenAt ?? fallbackTakenAt;
+
+    console.info("[photos/process]", {
+      latitude,
+      longitude,
+      name: originalName,
+      takenAt: effectiveTakenAt
+        ? new Date(effectiveTakenAt).toISOString()
+        : null,
+      usedFileTimestamp: takenAt === null,
+    });
 
     return Response.json({
       data: output.toString("base64"),
@@ -144,7 +155,7 @@ export async function POST(request: Request) {
       name: outputName,
       path: outputDisplayPath,
       size: output.byteLength,
-      takenAt: takenAt ?? fallbackTakenAt,
+      takenAt: effectiveTakenAt,
     });
   } catch (error) {
     const message =

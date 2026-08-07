@@ -2,7 +2,7 @@ import JSZip from "jszip";
 
 import type { Photo, PhotoCluster } from "./photo-types";
 
-const MAX_DISTANCE_METERS = 20;
+const MAX_DISTANCE_METERS = 50;
 const MAX_TIME_DIFFERENCE_MS = 4 * 60 * 60 * 1000;
 
 const imageExtensions = new Set([
