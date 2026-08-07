@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Crimson_Pro, Stack_Sans_Text } from "next/font/google";
+import { Crimson_Pro, Open_Sans } from "next/font/google";
 import "./globals.css";
 
 const crimsonPro = Crimson_Pro({
@@ -8,10 +8,9 @@ const crimsonPro = Crimson_Pro({
   display: "swap",
 });
 
-const stackSansText = Stack_Sans_Text({
-  variable: "--font-stack-sans-text",
+const openSans = Open_Sans({
+  variable: "--font-open-sans",
   subsets: ["latin"],
-  weight: ["200", "700"],
   display: "swap",
 });
 
@@ -28,7 +27,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${crimsonPro.variable} ${stackSansText.variable}`}
+      className={`${crimsonPro.variable} ${openSans.variable}`}
     >
       <body>{children}</body>
     </html>

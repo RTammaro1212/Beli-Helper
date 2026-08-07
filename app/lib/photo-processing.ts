@@ -262,11 +262,9 @@ export function formatClusterDate(cluster: PhotoCluster) {
   if (!timestamp) return "Date unavailable";
 
   return new Intl.DateTimeFormat(undefined, {
-    month: "short",
+    month: "numeric",
     day: "numeric",
     year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
   }).format(timestamp);
 }
 

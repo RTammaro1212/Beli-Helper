@@ -1,31 +1,19 @@
-import type {
-    DragEvent,
-    KeyboardEvent,
-    MouseEvent,
-} from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
+import { FaXmark } from "react-icons/fa6";
 import SquareLoader from "react-spinners/SquareLoader";
 
-import {
-    clusterCity,
-    formatClusterDate,
-} from "../lib/photo-processing";
-import {
-    PHOTO_DRAG_TYPE,
-    type PhotoCluster,
-} from "../lib/photo-types";
-import type {
-    MealCategory,
-    RestaurantSelection,
-} from "../lib/stack-schema";
+import { clusterCity, formatClusterDate } from "../lib/photo-processing";
+import { PHOTO_DRAG_TYPE, type PhotoCluster } from "../lib/photo-types";
+import type { MealCategory, RestaurantSelection } from "../lib/stack-schema";
 import { MealCategoryMenu } from "./meal-category-menu";
 import { PhotoImage } from "./photo-image";
 import { PlaceCombobox } from "./place-combobox";
 
-const STACK_ANGLES = [0, -5, 6] as const;
+const STACK_ANGLES = [0, -6, 7] as const;
 const STACK_OFFSETS = [
     { x: 0, y: 0 },
-    { x: -10, y: 5 },
-    { x: 9, y: -4 },
+    { x: -5, y: 2 },
+    { x: 4, y: -4 },
 ] as const;
 
 type PhotoClusterCardProps = {
@@ -73,7 +61,11 @@ export function PhotoClusterCard({
     onLabel,
 }: PhotoClusterCardProps) {
     const stackPhotos = cluster.photos.slice(0, 3);
-    const city = clusterCity(cluster);
+    const candidates = cluster.match?.candidates ?? [];
+    const selectedCandidate = candidates.find(
+        (candidate) => candidate.placeId === cluster.selection?.placeId,
+    );
+    const address = selectedCandidate?.address ?? clusterCity(cluster);
     const canLabel = !cluster.match && !labeling;
 
     const handlePreviewKeyDown = (
@@ -88,8 +80,7 @@ export function PhotoClusterCard({
 
     return (
         <article
-            className={`group/card relative min-w-0 p-3 transition-colors flex flex-col gap-4 bg-transparent ${isDropTarget ? "bg-green-200" : "hover:bg-stone-200"
-                }`}
+            className={`group/card relative flex h-full rounded-lg min-w-0 flex-col gap-5 bg-neutral-100 p-6 text-neutral-950 transition-colors duration-200 ${isDropTarget ? "bg-accent/20" : "hover:bg-neutral-200"}`}
             title={cluster.labelError ?? undefined}
             onDragEnter={(event) => {
                 if (!isPhotoDrag(event)) return;
@@ -120,138 +111,197 @@ export function PhotoClusterCard({
                 if (photoId) onMovePhoto(photoId, cluster.id);
             }}
         >
-            <div
-                className={`relative z-[80] mb-4 min-h-[54px] text-left ${canLabel ? "pr-16" : ""}`}
-            >
-                {cluster.selection ? (
-                    <PlaceCombobox
-                        candidates={cluster.match?.candidates ?? []}
-                        selection={cluster.selection}
-                        onSelect={(selection) => onSelectRestaurant(cluster.id, selection)}
-                    />
-                ) : null}
-                {canLabel ? (
-                    <button
-                        className="absolute right-0 top-0 bg-[#e5f3e6] px-2.5 py-1 font-sans text-[13px] text-[#087e2b] opacity-0 transition-opacity hover:opacity-80 focus:opacity-100 group-hover/card:opacity-100"
-                        type="button"
-                        onClick={() => onLabel(cluster.id)}
-                    >
-                        Label
-                    </button>
-                ) : null}
-                {cluster.category || city ? (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                        {cluster.category ? (
-                            <MealCategoryMenu
-                                value={cluster.category}
-                                onChange={(category) => onSelectCategory(cluster.id, category)}
-                            />
-                        ) : null}
-                        {city ? (
-                            <p className="m-0 font-sans text-[14px] font-extralight text-[#59605a]">
-                                {city}
-                            </p>
-                        ) : null}
-                    </div>
-                ) : null}
-            </div>
+            <p className="text-sm text-neutral-500 text-center -mb-4">
+                {formatClusterDate(cluster)}
+            </p>
 
             <div
-                className="group relative mx-auto mb-6 aspect-square w-[min(82%,260px)]"
+                className={`group relative mx-auto aspect-square w-full p-8 rounded-sm`}
             >
-                {stackPhotos.map((photo, index) => (
-                    <span
-                        className={`absolute inset-0 block origin-center overflow-hidden bg-[#f2f6f1] transition-transform duration-200 ${index === 0 ? "cursor-grab active:cursor-grabbing" : ""}`}
-                        key={photo.id}
-                        draggable={index === 0}
-                        onDragStart={
-                            index === 0
-                                ? (event) => onStartDrag(event, photo.id)
-                                : undefined
-                        }
-                        onDragEnd={index === 0 ? onEndDrag : undefined}
-                        onContextMenu={
-                            index === 0
-                                ? (event) =>
-                                    onOpenContextMenu(event, cluster.id, photo.id)
-                                : undefined
-                        }
-                        aria-label={
-                            index === 0
-                                ? `Drag ${photo.name} to another cluster`
-                                : undefined
-                        }
-                        style={{
-                            zIndex: stackPhotos.length - index,
-                            transform:
-                                stackPhotos.length === 1
-                                    ? "none"
-                                    : `translate(${STACK_OFFSETS[index].x}px, ${STACK_OFFSETS[index].y}px) rotate(${STACK_ANGLES[index]}deg)`,
-                        }}
-                    >
-                        <PhotoImage photo={photo} alt="" />
-                    </span>
-                ))}
-                <span className="absolute -bottom-[13px] -right-[13px] z-50 grid size-[43px] place-items-center bg-[#1c9c42] text-[17px] text-white">
-                    {cluster.photos.length}
-                </span>
-                <span className="absolute bottom-2 left-2 z-50 bg-[rgba(27,36,28,0.78)] px-2 py-1 font-sans text-[13px] font-extralight text-white">
-                    {formatClusterDate(cluster)}
-                </span>
-            </div>
 
-            <div
-                className="mt-[18px] grid grid-cols-[repeat(auto-fill,minmax(58px,1fr))] gap-[8px]"
-                aria-label="Photos in this cluster"
-            >
-                {cluster.photos.map((photo) => (
-                    <div
-                        className="group/preview relative aspect-square cursor-grab overflow-hidden bg-[#f2f6f1] opacity-80 transition duration-150 hover:z-10 hover:-translate-y-[3px] hover:opacity-100 active:cursor-grabbing"
-                        key={photo.id}
-                        draggable
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Bring ${photo.name} to the front of this stack`}
-                        onClick={() => onBringToFront(cluster.id, photo.id)}
-                        onKeyDown={(event) => handlePreviewKeyDown(event, photo.id)}
-                        onDragStart={(event) => onStartDrag(event, photo.id)}
-                        onDragEnd={onEndDrag}
-                        onContextMenu={(event) =>
-                            onOpenContextMenu(event, cluster.id, photo.id)
-                        }
-                        title={`Drag ${photo.name} to another stack`}
-                    >
-                        <PhotoImage photo={photo} alt={photo.name} />
-                        <button
-                            className={
-                                draggedPhotoId
-                                    ? "hidden"
-                                    : "absolute right-1.5 top-1.5 z-20 grid size-6 place-items-center bg-white text-lg leading-none text-[#1b241c] opacity-0 transition-opacity hover:opacity-80 focus:opacity-100 group-hover/preview:opacity-100"
+                <div
+                    className="w-full h-full relative hover:scale-102 transition-transform duration-200"
+                >
+                    {stackPhotos.map((photo, index) => (
+                        <span
+                            className={`absolute inset-0 block origin-center overflow-hidden bg-neutral-200 transition-transform duration-200 ${index === 0 ? "cursor-grab active:cursor-grabbing" : ""}`}
+                            key={photo.id}
+                            draggable={index === 0}
+                            onDragStart={
+                                index === 0
+                                    ? (event) => onStartDrag(event, photo.id)
+                                    : undefined
                             }
-                            type="button"
-                            draggable={false}
-                            aria-label={`Delete ${photo.name}`}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                onDeletePhoto(photo.id);
+                            onDragEnd={index === 0 ? onEndDrag : undefined}
+                            onContextMenu={
+                                index === 0
+                                    ? (event) =>
+                                        onOpenContextMenu(
+                                            event,
+                                            cluster.id,
+                                            photo.id,
+                                        )
+                                    : undefined
+                            }
+                            aria-label={
+                                index === 0
+                                    ? `Drag ${photo.name} to another cluster`
+                                    : undefined
+                            }
+                            style={{
+                                zIndex: stackPhotos.length - index,
+                                filter: `grayscale(${index * 50}%)`,
+                                transform:
+                                    stackPhotos.length === 1
+                                        ? "none"
+                                        : `translate(${STACK_OFFSETS[index].x}px, ${STACK_OFFSETS[index].y}px) rotate(${STACK_ANGLES[index]}deg)`,
                             }}
                         >
-                            <span aria-hidden="true">×</span>
-                        </button>
-                    </div>
-                ))}
+                            <PhotoImage photo={photo} alt="" />
+                            {index === 0 ? (
+                                <button
+                                    className="rounded-xs absolute right-2 top-2 z-20 grid size-8 place-items-center bg-white text-neutral-950 opacity-0 transition-opacity hover:opacity-80 focus:opacity-100 group-hover:opacity-100"
+                                    type="button"
+                                    draggable={false}
+                                    aria-label={`Delete ${photo.name}`}
+                                    onPointerDown={(event) =>
+                                        event.stopPropagation()
+                                    }
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        onDeletePhoto(photo.id);
+                                    }}
+                                >
+                                    <FaXmark
+                                        className="size-4"
+                                        aria-hidden="true"
+                                    />
+                                </button>
+                            ) : null}
+                        </span>
+                    ))}</div>
             </div>
 
+            {cluster.photos.length > 1 ? (
+                <div
+                    className="flex flex-wrap gap-2 mt-4"
+                    aria-label="Photos in this cluster"
+                >
+                    {cluster.photos.map((photo) => (
+                        <div
+                            className="group/preview relative size-14 cursor-grab overflow-hidden bg-neutral-300 opacity-80 transition-[opacity,transform] hover:-translate-y-1 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950 active:cursor-grabbing"
+                            key={photo.id}
+                            draggable
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Bring ${photo.name} to the front of this stack`}
+                            onClick={() => onBringToFront(cluster.id, photo.id)}
+                            onKeyDown={(event) =>
+                                handlePreviewKeyDown(event, photo.id)
+                            }
+                            onDragStart={(event) =>
+                                onStartDrag(event, photo.id)
+                            }
+                            onDragEnd={onEndDrag}
+                            onContextMenu={(event) =>
+                                onOpenContextMenu(event, cluster.id, photo.id)
+                            }
+                            title={`Drag ${photo.name} to another stack`}
+                        >
+                            <PhotoImage photo={photo} alt={photo.name} />
+                            <button
+                                className={
+                                    draggedPhotoId
+                                        ? "hidden"
+                                        : "rounded-xs absolute right-1 top-1 z-20 grid size-6 place-items-center bg-white text-neutral-950 opacity-0 transition-opacity hover:opacity-80 focus:opacity-100 group-hover/preview:opacity-100"
+                                }
+                                type="button"
+                                draggable={false}
+                                aria-label={`Delete ${photo.name}`}
+                                onPointerDown={(event) =>
+                                    event.stopPropagation()
+                                }
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    onDeletePhoto(photo.id);
+                                }}
+                            >
+                                <FaXmark
+                                    className="size-3"
+                                    aria-hidden="true"
+                                />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+
+
+
+            <div className="flex min-w-0 flex-col gap-1">
+                {cluster.selection || candidates.length ? (
+                    <PlaceCombobox
+                        candidates={candidates}
+                        selection={cluster.selection}
+                        onSelect={(selection) =>
+                            onSelectRestaurant(cluster.id, selection)
+                        }
+                    />
+                ) : null}
+                {address ? (
+                    <p className="m-0 text-sm leading-relaxed text-neutral-500">
+                        {address}
+                    </p>
+                ) : null}
+
+            </div>
+
+
+
+            {cluster.category ? (
+                <MealCategoryMenu
+                    value={cluster.category}
+                    onChange={(category) =>
+                        onSelectCategory(cluster.id, category)
+                    }
+                />
+            ) : null}
+
+            <div className="flex-1" />
+
+            {canLabel ? (
+                <button
+                    className="rounded-sm bg-accent px-3 py-2 text-sm text-white transition-colors hover:bg-accent/85 disabled:opacity-50"
+                    type="button"
+                    onClick={() => onLabel(cluster.id)}
+                >
+                    Label
+                </button>
+            ) : null}
+
             {cluster.labelStatus === "matching" ? (
-                <div className="absolute inset-0 z-[110] grid place-items-center bg-[rgba(239,240,236,0.9)]" aria-label="Matching location">
-                    <SquareLoader color="#1c9c42" size={48} speedMultiplier={1.15} />
+                <div
+                    className="absolute inset-0 z-[110] grid place-items-center bg-neutral-200/90"
+                    aria-label="Matching location"
+                >
+                    <SquareLoader
+                        color="var(--color-accent)"
+                        size={48}
+                        speedMultiplier={1.15}
+                    />
                 </div>
             ) : null}
 
             {cluster.labelStatus === "queued" ? (
-                <div className="queued-pulse absolute inset-0 z-[110] grid place-items-center bg-[rgba(239,240,236,0.88)] font-sans text-[21px] text-[#4f5650]">
-                    Queued
+                <div
+                    className="absolute inset-0 z-[110] grid place-items-center bg-neutral-200/90"
+                    aria-label="Matching location"
+                >
+                    <SquareLoader
+                        color="var(--color-neutral-700)"
+                        size={48}
+                        speedMultiplier={1.15}
+                    />
                 </div>
             ) : null}
         </article>

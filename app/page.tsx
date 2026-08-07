@@ -79,7 +79,7 @@ export default function Home() {
                     }),
                 }));
                 setClusters(restored);
-                if (restored.length) setMessage("Saved progress restored");
+                if (restored.length) setMessage("");
             })
             .catch((error) => console.error("Could not restore saved photos", error))
             .finally(() => {
@@ -409,7 +409,7 @@ export default function Home() {
 
     return (
         <main
-            className="relative min-h-screen bg-white px-[clamp(20px,4.5vw,68px)] pb-20 text-[#1b241c]"
+            className="relative min-h-screen bg-white px-6 pb-24 font-sans text-neutral-950"
             onDragEnter={(event) => {
                 event.preventDefault();
                 if (!Array.from(event.dataTransfer.types).includes(PHOTO_DRAG_TYPE)) {
@@ -443,19 +443,21 @@ export default function Home() {
             />
 
             {hasPhotos ? (
-                <section className="mx-auto w-full max-w-7xl pt-[clamp(36px,5vw,68px)]" aria-live="polite">
-                    <div className="mb-[clamp(36px,5vw,58px)] flex items-end justify-between gap-8 max-[680px]:flex-col max-[680px]:items-start">
+                <section className="mx-auto w-full max-w-7xl pt-10" aria-live="polite">
+                    <div className="mb-10 flex items-end justify-between gap-6 max-[680px]:flex-col max-[680px]:items-start">
                         <div>
-                            <h1 className="m-0 text-[clamp(34px,4vw,56px)] font-medium leading-none tracking-[-0.055em]">
+                            <h1 className="m-0 font-sans text-[clamp(32px,3vw,40px)] font-semibold leading-none tracking-[-0.035em] text-neutral-950">
                                 {clusters.length} meal{clusters.length === 1 ? "" : "s"}
                             </h1>
-                            <p className="mt-3 font-sans text-[15px] text-[#78837a]">
-                                {message}
-                            </p>
+                            {message ? (
+                                <p className="mt-3 font-sans text-[15px] text-neutral-500">
+                                    {message}
+                                </p>
+                            ) : null}
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,290px),1fr))] items-start gap-4">
+                    <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 lg:grid-cols-3">
                         {clusters.map((cluster) => (
                             <PhotoClusterCard
                                 key={cluster.id}
@@ -501,7 +503,7 @@ export default function Home() {
 
             {draggingOver ? (
                 <div
-                    className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-[rgba(226,239,227,0.92)] text-[clamp(38px,7vw,82px)] tracking-[-0.05em] text-[#087e2b]"
+                    className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-neutral-100/95 font-sans text-[clamp(38px,7vw,82px)] font-semibold tracking-[-0.05em] text-accent"
                     aria-hidden="true"
                 >
                     <span>Drop to add photos</span>

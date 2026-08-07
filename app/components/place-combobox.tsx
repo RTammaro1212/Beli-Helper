@@ -1,11 +1,12 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
-
 import type {
     PlaceCandidate,
     RestaurantSelection,
 } from "../lib/stack-schema";
+
+const CUSTOM_LOCATION_VALUE = "__custom_location__";
+const CURRENT_CUSTOM_LOCATION_VALUE = "__current_custom_location__";
 
 type PlaceComboboxProps = {
     candidates: PlaceCandidate[];
@@ -18,131 +19,48 @@ export function PlaceCombobox({
     selection,
     onSelect,
 }: PlaceComboboxProps) {
-    const [open, setOpen] = useState(false);
-    const [query, setQuery] = useState(selection?.name ?? "");
-    const containerRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
-    const optionsId = useId();
+    if (!selection && !candidates.length) return null;
 
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    const filtered = candidates.filter((candidate) =>
-        candidate.name.toLocaleLowerCase().includes(normalizedQuery),
+    const selectedCandidate = candidates.find(
+        (candidate) => candidate.placeId === selection?.placeId,
     );
-    const exactCandidate = candidates.find(
-        (candidate) => candidate.name.toLocaleLowerCase() === normalizedQuery,
-    );
-    const isCurrentSelection =
-        selection?.name.toLocaleLowerCase() === normalizedQuery;
-    const hasCustomOption = Boolean(
-        query.trim() && !exactCandidate && !isCurrentSelection,
-    );
-    const showOptions = open && (hasCustomOption || filtered.length > 0);
+    const selectedValue = selectedCandidate?.placeId ??
+        (selection ? CURRENT_CUSTOM_LOCATION_VALUE : "");
 
-    if (!candidates.length) {
-        return selection ? (
-            <p className="m-0 py-1 font-sans text-[24px] font-medium leading-tight text-[#1b241c]">
-                {selection.name}
-            </p>
-        ) : null;
-    }
+    const chooseLocation = (value: string) => {
+        if (value === CUSTOM_LOCATION_VALUE) {
+            const name = window.prompt("Location name", selection?.name ?? "")?.trim();
+            if (name) onSelect({ placeId: null, name, source: "user" });
+            return;
+        }
 
-    const chooseCandidate = (candidate: PlaceCandidate) => {
+        const candidate = candidates.find((item) => item.placeId === value);
+        if (!candidate) return;
+
         onSelect({
             placeId: candidate.placeId,
             name: candidate.name,
             source: "model",
         });
-        setQuery(candidate.name);
-        setOpen(false);
-    };
-
-    const chooseCustom = () => {
-        const name = query.trim();
-        if (!name) return;
-        onSelect({ placeId: null, name, source: "user" });
-        setQuery(name);
-        setOpen(false);
     };
 
     return (
-        <div
-            ref={containerRef}
-            className="relative z-[80] w-full"
-            onBlur={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-            }}
+        <select
+            className="w-full min-w-0 appearance-none bg-transparent font-sans text-[clamp(20px,1.6vw,26px)] font-bold leading-tight text-neutral-950 outline-none focus:outline-none"
+            aria-label="Location"
+            value={selectedValue}
+            onChange={(event) => chooseLocation(event.target.value)}
         >
-            {open ? (
-                <input
-                    ref={inputRef}
-                    className="w-full bg-[#dfded9] px-2 py-1 text-left font-serif text-[24px] font-bold leading-tight text-[#1b241c] outline-none"
-                    value={query}
-                    aria-label="Restaurant name"
-                    role="combobox"
-                    aria-expanded={showOptions}
-                    aria-controls={showOptions ? optionsId : undefined}
-                    onChange={(event) => setQuery(event.target.value)}
-                    onKeyDown={(event) => {
-                        if (event.key === "Escape") setOpen(false);
-                        if (event.key === "Enter") {
-                            event.preventDefault();
-                            if (exactCandidate) chooseCandidate(exactCandidate);
-                            else chooseCustom();
-                        }
-                    }}
-                />
-            ) : (
-                <button
-                    className="w-full bg-transparent py-1 text-left font-serif text-[24px] font-bold leading-tight text-[#1b241c] underline decoration-[#8e928e] decoration-1 underline-offset-4"
-                    type="button"
-                    onClick={() => {
-                        setQuery("");
-                        setOpen(true);
-                        requestAnimationFrame(() => inputRef.current?.select());
-                    }}
-                >
-                    {selection?.name ?? "Name this place"}
-                </button>
-            )}
-
-            {showOptions ? (
-                <div
-                    id={optionsId}
-                    className="no-scrollbar absolute left-0 top-full z-[100] max-h-[220px] w-[min(380px,calc(100vw-40px))] overflow-y-auto bg-[#deddd8] p-1.5 text-left font-sans"
-                    role="listbox"
-                >
-                    {hasCustomOption ? (
-                        <button
-                            className="block w-full bg-[#d2d1cb] px-3 py-2 text-left text-[14px] text-[#242925] hover:bg-white focus:bg-white"
-                            type="button"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={chooseCustom}
-                        >
-                            Use “{query.trim()}”
-                        </button>
-                    ) : null}
-                    {filtered.map((candidate) => (
-                        <button
-                            key={candidate.placeId}
-                            className="block w-full bg-transparent px-3 py-2 text-left hover:bg-white focus:bg-white"
-                            type="button"
-                            role="option"
-                            aria-selected={selection?.placeId === candidate.placeId}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => chooseCandidate(candidate)}
-                        >
-                            <span className="block font-sans text-[14px] font-bold text-[#1b241c]">
-                                {candidate.name}
-                            </span>
-                            {candidate.address ? (
-                                <span className="block font-sans text-[12px] font-extralight text-[#59605a]">
-                                    {candidate.address}
-                                </span>
-                            ) : null}
-                        </button>
-                    ))}
-                </div>
+            {!selection ? <option value="">Choose location</option> : null}
+            {selection && !selectedCandidate ? (
+                <option value={CURRENT_CUSTOM_LOCATION_VALUE}>{selection.name}</option>
             ) : null}
-        </div>
+            {candidates.map((candidate) => (
+                <option key={candidate.placeId} value={candidate.placeId}>
+                    {candidate.name}
+                </option>
+            ))}
+            <option value={CUSTOM_LOCATION_VALUE}>Other location…</option>
+        </select>
     );
 }
