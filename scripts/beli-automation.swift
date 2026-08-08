@@ -179,40 +179,22 @@ private final class BeliAutomation {
 
     private func startingRating() async throws {
         start("start_rating")
-        let pickerIsOpen = try await findText("choose a category", timeout: 1) != nil
-        var categoryRow = try await findText("add to my list of", timeout: 2)
-        if !pickerIsOpen && categoryRow == nil {
-            let plusPoint = try await waitForTealCircle(timeout: 25)
-            try await clickThroughScreenshot(plusPoint)
-            categoryRow = try await findText("add to my list of", timeout: 20)
+        let image = try await capture.image()
+        guard let plusPoint = Self.findTealCircle(in: image) else {
+            throw AutomationFailure.message("The teal rating button could not be found.")
         }
-        guard pickerIsOpen || categoryRow != nil else {
-            throw AutomationFailure.message("The Beli rating form did not open.")
-        }
+        try await clickThroughScreenshot(plusPoint)
+        try await pause(1)
         finish("start_rating")
     }
 
     private func choosingCategory() async throws {
         start("choose_category")
-        var title = try await findText("choose a category", timeout: 2)
-        if title == nil {
-            var categoryRow = try await findText("add to my list of", timeout: 2)
-            if categoryRow == nil {
-                let plusPoint = try await waitForTealCircle(timeout: 25)
-                try await clickThroughScreenshot(plusPoint)
-                categoryRow = try await findText("add to my list of", timeout: 20)
-            }
-            guard let categoryRow else {
-                throw AutomationFailure.message("The Beli rating form did not open.")
-            }
-            try await clickDetectedTarget(
-                CGPoint(x: 0.57, y: categoryRow.center.y)
-            )
-            title = try await findText("choose a category", timeout: 20)
-        }
-        guard let title else {
-            throw AutomationFailure.message("The Beli category picker did not open.")
-        }
+        let categoryRow = try await waitForText("add to my list of", timeout: 20)
+        try await clickDetectedTarget(
+            CGPoint(x: 0.57, y: categoryRow.center.y)
+        )
+        let title = try await waitForText("choose a category", timeout: 20)
         let categoryLabel: String
         switch configuration.category {
         case "Restaurant": categoryLabel = "restaurants"
@@ -284,13 +266,36 @@ private final class BeliAutomation {
         start("add_photos")
         let addPhotos = try await waitForText("add photos", timeout: 20)
         try await clickDetectedTarget(addPhotos.center)
-        let collections = try await waitForText("collections", timeout: 15) { $0.center.y < 0.2 }
-        try await clickDetectedTarget(collections.center)
-        try await pause(0.8)
 
-        var album = try await findText("beli", timeout: 3) { item in
-            item.center.y > 0.15
+        var album: OCRItem?
+        var collectionsIsOpen = false
+        for _ in 0..<3 {
+            let collections = try await waitForText("collections", timeout: 15) {
+                $0.center.y < 0.2
+            }
+            try await pause(0.5)
+            try await clickDetectedTarget(collections.center)
+            try await pause(0.8)
+
+            album = try await findText("beli", timeout: 2) {
+                $0.center.y > 0.15
+            }
+            if album != nil {
+                collectionsIsOpen = true
+                break
+            }
+            let albums = try await findText("albums", timeout: 2) {
+                $0.center.y > 0.15
+            }
+            if albums != nil {
+                collectionsIsOpen = true
+                break
+            }
         }
+        guard collectionsIsOpen else {
+            throw AutomationFailure.message("The photo picker did not open Collections.")
+        }
+
         var albumScrolls = 0
         while album == nil && albumScrolls < 12 {
             scrollDown()
@@ -347,15 +352,19 @@ private final class BeliAutomation {
 
     private func addPhotoDescriptions(_ descriptions: [String]) async throws {
         _ = try await waitForText("photo upload", timeout: 20) { $0.center.y < 0.2 }
-        var descriptionIndex = 0
+        guard !descriptions.isEmpty else {
+            throw AutomationFailure.message("No added photos were found to describe.")
+        }
+
+        var prompt: OCRItem?
         var previousScreenFeature: [Float]?
         var unchangedScreens = 0
         var scrolls = 0
 
-        while scrolls < 40 {
+        while prompt == nil && scrolls < 40 {
             let image = try await capture.image()
             let items = try recognizeText(in: image)
-            let prompt = items
+            prompt = items
                 .filter { item in
                     let text = normalize(item.text)
                     return text.contains("what s this") &&
@@ -364,32 +373,7 @@ private final class BeliAutomation {
                 }
                 .min { $0.center.y < $1.center.y }
 
-            if let prompt {
-                let description = descriptions.indices.contains(descriptionIndex)
-                    ? descriptions[descriptionIndex]
-                    : "Menu"
-                try await clickDetectedTarget(prompt.center)
-                _ = try await waitForText("description", timeout: 12) {
-                    $0.center.y < 0.2
-                }
-                try typeText(description)
-                let done = try await waitForText("done", timeout: 12) {
-                    $0.center.y < 0.2
-                }
-                try await clickDetectedTarget(done.center)
-                _ = try await waitForText("photo upload", timeout: 12) {
-                    $0.center.y < 0.2
-                }
-                descriptionIndex += 1
-                previousScreenFeature = nil
-                unchangedScreens = 0
-                emit(
-                    type: "diagnostic",
-                    step: "add_photo_descriptions",
-                    message: "added photo description \(descriptionIndex)"
-                )
-                continue
-            }
+            if prompt != nil { break }
 
             let screenFeature = imageFeature(image)
             if let previousScreenFeature,
@@ -405,8 +389,35 @@ private final class BeliAutomation {
             scrolls += 1
         }
 
-        guard descriptionIndex > 0 else {
+        guard let prompt else {
             throw AutomationFailure.message("No added photos were found to describe.")
+        }
+        try await clickDetectedTarget(prompt.center)
+
+        for (index, description) in descriptions.enumerated() {
+            _ = try await waitForText("description", timeout: 12) {
+                $0.center.y < 0.2
+            }
+            try await pause(0.6)
+            try typeText(description)
+
+            let isLastDescription = index == descriptions.count - 1
+            let button = try await waitForText(
+                isLastDescription ? "done" : "next",
+                timeout: 12
+            ) {
+                $0.center.y < 0.2
+            }
+            try await clickDetectedTarget(button.center)
+            emit(
+                type: "diagnostic",
+                step: "add_photo_descriptions",
+                message: "added photo description \(index + 1)"
+            )
+        }
+
+        _ = try await waitForText("photo upload", timeout: 20) {
+            $0.center.y < 0.2
         }
     }
 
@@ -415,26 +426,28 @@ private final class BeliAutomation {
         let okay = try await waitForText("okay", timeout: 45) { $0.center.y > 0.72 }
         try await clickDetectedTarget(okay.center)
 
-        var clearFrames = 0
         let deadline = Date().addingTimeInterval(20 * 60)
         while Date() < deadline {
             let items = try recognizeText(in: await capture.image(), level: .fast)
-            let stillRating = items.contains { item in
-                let text = normalize(item.text)
-                return text.contains("how was it") ||
-                    text.contains("i liked it") ||
-                    text.contains("it was fine") ||
-                    text.contains("i didnt like it") ||
-                    text.contains("which do you prefer")
+            let sharePageIsOpen = items.contains { item in
+                normalize(item.text).contains("share this page") &&
+                    item.center.y > 0.65
             }
-            clearFrames = stillRating ? 0 : clearFrames + 1
-            if clearFrames >= 3 {
+            if sharePageIsOpen {
+                emit(type: "celebrate", step: nil, message: nil)
+                try await pause(5)
+                try await clickDetectedTarget(CGPoint(x: 0.085, y: 0.15))
+                let feed = try await waitForText("feed", timeout: 20) {
+                    $0.center.y > 0.8
+                }
+                try await clickDetectedTarget(feed.center)
+                _ = try await waitForText("search a restaurant", timeout: 20)
                 finish("finish_in_beli")
                 return
             }
             try await pause(0.8)
         }
-        throw AutomationFailure.message("Timed out while waiting for the Beli comparison flow.")
+        throw AutomationFailure.message("Timed out while waiting for Beli's share page.")
     }
 
     private func skipPhotos() async throws {
@@ -790,18 +803,6 @@ private final class BeliAutomation {
         throw AutomationFailure.message("Could not find “\(target)” in iPhone Mirroring.")
     }
 
-    private func waitForTealCircle(timeout: TimeInterval) async throws -> CGPoint {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let image = try await capture.image()
-            if let point = Self.findTealCircle(in: image) {
-                return point
-            }
-            try await pause(0.5)
-        }
-        throw AutomationFailure.message("The teal rating button could not be found.")
-    }
-
     private func findText(
         _ target: String,
         timeout: TimeInterval,
@@ -946,6 +947,9 @@ private final class BeliAutomation {
 
     private func typeText(_ text: String) throws {
         activatePhoneWindow()
+        let characterDelays = text.map { _ in
+            String(Int.random(in: 30...50))
+        }.joined(separator: ",")
         let typing = Process()
         typing.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         typing.arguments = [
@@ -954,13 +958,27 @@ private final class BeliAutomation {
             "-e",
             "set inputText to item 1 of argv",
             "-e",
+            "set delayText to item 2 of argv",
+            "-e",
+            "set previousDelimiters to AppleScript's text item delimiters",
+            "-e",
+            "set AppleScript's text item delimiters to \",\"",
+            "-e",
+            "set characterDelays to text items of delayText",
+            "-e",
+            "set AppleScript's text item delimiters to previousDelimiters",
+            "-e",
+            "set characterIndex to 1",
+            "-e",
             "tell application \"System Events\"",
             "-e",
             "repeat with currentCharacter in characters of inputText",
             "-e",
             "keystroke (currentCharacter as text)",
             "-e",
-            "delay 0.01",
+            "delay (((item characterIndex of characterDelays) as integer) / 1000.0)",
+            "-e",
+            "set characterIndex to characterIndex + 1",
             "-e",
             "end repeat",
             "-e",
@@ -969,6 +987,7 @@ private final class BeliAutomation {
             "end run",
             "--",
             text,
+            characterDelays,
         ]
         typing.standardOutput = FileHandle.nullDevice
         typing.standardError = FileHandle.nullDevice

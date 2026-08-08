@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { searchNearbyFoodPlaces } from "@/app/lib/places";
 import { matchRestaurant } from "@/app/lib/restaurant-matcher";
-import { createRunLog } from "@/app/lib/run-logs";
+import { createRunLog, serializeError } from "@/app/lib/run-logs";
 import {
   labelStackRequestSchema,
   labelStackResponseSchema,
@@ -38,6 +38,7 @@ export async function POST(request: Request) {
     await log.write(`${input.stackId}-places`, placesSearch);
     const match = await matchRestaurant({
       runId: input.runId,
+      stackId: input.stackId,
       photos: input.photos,
       places: placesSearch.places,
       log,
@@ -51,7 +52,10 @@ export async function POST(request: Request) {
     return NextResponse.json(response);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Labeling failed";
-    await log.write(`${input.stackId}-error`, { message });
+    await log.write(`${input.stackId}-error`, {
+      message,
+      error: serializeError(error),
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

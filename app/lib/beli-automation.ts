@@ -178,11 +178,15 @@ function launchSession(
                 current.steps[event.step] = "complete";
             } else if (event.type === "complete") {
                 current.state = "complete";
+                current.celebrating = true;
                 current.error = null;
                 current.recovery = null;
                 for (const step of RANKING_STEPS) current.steps[step.id] = "complete";
+            } else if (event.type === "celebrate") {
+                current.celebrating = true;
             } else if (event.type === "error") {
                 current.state = "error";
+                current.celebrating = false;
                 current.error = event.message ?? "Beli automation failed.";
                 current.recovery =
                     event.code === "photos_not_found" ? "photos_not_found" : null;
@@ -198,6 +202,7 @@ function launchSession(
         const current = currentSession(session.id, runVersion);
         if (!current) return;
         current.state = "error";
+        current.celebrating = false;
         current.error = error.message;
         current.recovery = null;
     });
@@ -207,6 +212,7 @@ function launchSession(
         current.process = null;
         if (code !== 0 && current.state !== "error") {
             current.state = "error";
+            current.celebrating = false;
             current.error = stderr.trim() || "Beli automation stopped unexpectedly.";
             current.recovery = null;
         }
@@ -271,6 +277,7 @@ export async function startBeliAutomation(input: StartAutomationInput) {
         id: sessionId,
         clusterId: input.clusterId,
         state: "running",
+        celebrating: false,
         steps: freshSteps("open_beli"),
         error: null,
         recovery: null,
@@ -299,6 +306,7 @@ export async function retryBeliAutomation(
     await stopSessionProcess(session);
     session.binary = await getAutomationBinary();
     session.state = "running";
+    session.celebrating = false;
     session.steps = freshSteps(startStep);
     session.error = null;
     session.recovery = null;
@@ -324,6 +332,7 @@ export async function skipBeliAutomationStep(
     const nextStep = RANKING_STEPS[skippedIndex + 1];
     if (!nextStep) {
         session.state = "complete";
+        session.celebrating = true;
         for (const step of RANKING_STEPS) session.steps[step.id] = "complete";
         scheduleCleanup(session);
         return getBeliAutomationStatus(sessionId)!;
@@ -331,6 +340,7 @@ export async function skipBeliAutomationStep(
 
     session.binary = await getAutomationBinary();
     session.state = "running";
+    session.celebrating = false;
     session.steps = freshSteps(nextStep.id);
     launchSession(session, nextStep.id);
     return getBeliAutomationStatus(sessionId)!;
@@ -346,6 +356,7 @@ export async function skipBeliPhotos(sessionId: string) {
     await stopSessionProcess(session);
     session.binary = await getAutomationBinary();
     session.state = "running";
+    session.celebrating = false;
     session.steps = freshSteps("add_photos");
     session.error = null;
     session.recovery = null;
@@ -363,6 +374,7 @@ export async function continueBeliPhotos(sessionId: string) {
     await stopSessionProcess(session);
     session.binary = await getAutomationBinary();
     session.state = "running";
+    session.celebrating = false;
     session.steps = freshSteps("add_photo_descriptions");
     session.error = null;
     session.recovery = null;
@@ -399,6 +411,7 @@ export async function cancelBeliAutomation(sessionId: string) {
     }
     await stopSessionProcess(session);
     session.state = "cancelled";
+    session.celebrating = false;
     session.error = null;
     session.recovery = null;
     scheduleCleanup(session);
@@ -412,6 +425,7 @@ export function getBeliAutomationStatus(sessionId: string) {
         id: session.id,
         clusterId: session.clusterId,
         state: session.state,
+        celebrating: session.celebrating,
         steps: session.steps,
         error: session.error,
         recovery: session.recovery,

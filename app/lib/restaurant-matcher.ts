@@ -6,6 +6,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import type { LabelPhotoInput } from "./photo-types";
+import { serializeError } from "./run-logs";
 import {
   MEAL_CATEGORIES,
   mealCategorySchema,
@@ -117,6 +118,7 @@ async function runMatch(
   photos: LabelPhotoInput[],
   places: GooglePlace[],
   log: MatchLogger,
+  logPrefix: string,
 ) {
   const outputCount = Math.min(5, places.length);
   const schema = z.object({
@@ -151,60 +153,99 @@ async function runMatch(
   if (provider === "codex-cli") {
     const providerLogs: string[] = [];
     const { codexExec } = await import("ai-sdk-provider-codex-cli");
-    const result = await generateText({
-      model: codexExec(CODEX_MODEL, {
-        allowNpx: false,
-        skipGitRepoCheck: true,
-        approvalMode: "never",
-        sandboxMode: "read-only",
-        reasoningEffort: "medium",
-        logger: {
-          debug: (message) => providerLogs.push(`debug ${message}`),
-          info: (message) => providerLogs.push(`info ${message}`),
-          warn: (message) => providerLogs.push(`warn ${message}`),
-          error: (message) => providerLogs.push(`error ${message}`),
+    try {
+      const result = await generateText({
+        model: codexExec(CODEX_MODEL, {
+          allowNpx: false,
+          skipGitRepoCheck: true,
+          approvalMode: "never",
+          sandboxMode: "read-only",
+          reasoningEffort: "medium",
+          logger: {
+            debug: (message) => providerLogs.push(`debug ${message}`),
+            info: (message) => providerLogs.push(`info ${message}`),
+            warn: (message) => providerLogs.push(`warn ${message}`),
+            error: (message) => providerLogs.push(`error ${message}`),
+          },
+        }),
+        output: Output.object({ schema }),
+        messages,
+        include: {
+          requestBody: false,
+          requestMessages: false,
+          responseBody: false,
         },
-      }),
+      });
+      await log.write(`${logPrefix}-codex-provider`, {
+        status: "success",
+        model: CODEX_MODEL,
+        logs: providerLogs,
+        output: result.output,
+        finishReason: result.finishReason,
+        usage: result.usage,
+        warnings: result.warnings,
+        providerMetadata: result.providerMetadata,
+      });
+      return { output: result.output, model: CODEX_MODEL };
+    } catch (error) {
+      await log.write(`${logPrefix}-codex-provider`, {
+        status: "error",
+        model: CODEX_MODEL,
+        logs: providerLogs,
+        error: serializeError(error),
+      });
+      throw error;
+    }
+  }
+
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured");
+  const openrouter = createOpenRouter({ apiKey });
+  try {
+    const result = await generateText({
+      model: openrouter(OPENROUTER_MODEL),
       output: Output.object({ schema }),
       messages,
+      providerOptions: {
+        openrouter: {
+          reasoning: { effort: "medium", exclude: true },
+        },
+      },
       include: {
         requestBody: false,
         requestMessages: false,
         responseBody: false,
       },
     });
-    await log.write("codex-provider", { logs: providerLogs });
-    return { output: result.output, model: CODEX_MODEL };
+    await log.write(`${logPrefix}-openrouter-provider`, {
+      status: "success",
+      model: OPENROUTER_MODEL,
+      output: result.output,
+      finishReason: result.finishReason,
+      usage: result.usage,
+      warnings: result.warnings,
+      providerMetadata: result.providerMetadata,
+    });
+    return { output: result.output, model: OPENROUTER_MODEL };
+  } catch (error) {
+    await log.write(`${logPrefix}-openrouter-provider`, {
+      status: "error",
+      model: OPENROUTER_MODEL,
+      error: serializeError(error),
+    });
+    throw error;
   }
-
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured");
-  const openrouter = createOpenRouter({ apiKey });
-  const result = await generateText({
-    model: openrouter(OPENROUTER_MODEL),
-    output: Output.object({ schema }),
-    messages,
-    providerOptions: {
-      openrouter: {
-        reasoning: { effort: "medium", exclude: true },
-      },
-    },
-    include: {
-      requestBody: false,
-      requestMessages: false,
-      responseBody: false,
-    },
-  });
-  return { output: result.output, model: OPENROUTER_MODEL };
 }
 
 export async function matchRestaurant({
   runId,
+  stackId,
   photos,
   places,
   log,
 }: {
   runId: string;
+  stackId: string;
   photos: LabelPhotoInput[];
   places: GooglePlace[];
   log: MatchLogger;
@@ -212,40 +253,74 @@ export async function matchRestaurant({
   if (!places.length) throw new Error("No nearby food places were found");
 
   const runtime = await getLabelRuntime();
-  await log.write("runtime", runtime);
+  await log.write(`${stackId}-runtime`, runtime);
   let provider = runtime.provider;
   let generated: Awaited<ReturnType<typeof runMatch>>;
 
   try {
-    generated = await runMatch(provider, photos, places, log);
+    generated = await runMatch(provider, photos, places, log, stackId);
   } catch (error) {
     if (provider !== "codex-cli" || !process.env.OPENROUTER_API_KEY) throw error;
-    await log.write("codex-fallback", {
-      message: error instanceof Error ? error.message : String(error),
+    await log.write(`${stackId}-codex-fallback`, {
+      error: serializeError(error),
     });
     provider = "openrouter";
-    generated = await runMatch(provider, photos, places, log);
+    generated = await runMatch(provider, photos, places, log, stackId);
   }
+
+  await log.write(`${stackId}-model-output`, {
+    provider,
+    model: generated.model,
+    output: generated.output,
+  });
 
   const placesById = new Map(
     places.map((place) => [place.id!, place] as const),
   );
   const seenPlaceIds = new Set<string>();
-  const candidates = generated.output.candidates.flatMap((candidate) => {
+  const candidates: PlaceCandidate[] = [];
+  const validation = generated.output.candidates.map((candidate, index) => {
     const place = placesById.get(candidate.placeId);
-    if (!place || seenPlaceIds.has(candidate.placeId)) return [];
+    if (!place) {
+      return {
+        index,
+        placeId: candidate.placeId,
+        status: "unknown_place_id" as const,
+      };
+    }
+    if (seenPlaceIds.has(candidate.placeId)) {
+      return {
+        index,
+        placeId: candidate.placeId,
+        name: place.displayName?.text,
+        status: "duplicate_place_id" as const,
+      };
+    }
     seenPlaceIds.add(candidate.placeId);
-    return [
-      {
-        ...candidate,
-        name: place.displayName!.text!,
-        address: place.formattedAddress ?? undefined,
-        place,
-      } satisfies PlaceCandidate,
-    ];
+    candidates.push({
+      ...candidate,
+      name: place.displayName!.text!,
+      address: place.formattedAddress ?? undefined,
+      place,
+    });
+    return {
+      index,
+      placeId: candidate.placeId,
+      name: place.displayName?.text,
+      status: "accepted" as const,
+    };
   });
 
   const expectedCandidates = Math.min(5, places.length);
+  await log.write(`${stackId}-candidate-validation`, {
+    expectedCandidates,
+    acceptedCandidates: candidates.length,
+    validation,
+    allowedPlaces: places.map((place) => ({
+      placeId: place.id,
+      name: place.displayName?.text,
+    })),
+  });
   if (candidates.length !== expectedCandidates) {
     throw new Error(
       `The model did not return ${expectedCandidates} valid nearby places`,

@@ -94,6 +94,7 @@ export function RankingOverlay({
 
     const showingProgress = progress !== null;
     const completed = progress?.state === "complete";
+    const celebrating = progress?.celebrating || completed;
 
     return (
         <div
@@ -275,7 +276,7 @@ export function RankingOverlay({
                             </button>
                         ) : null}
 
-                        {completed ? (
+                        {celebrating ? (
                             <div className="pointer-events-none fixed inset-0 z-[220] overflow-hidden" aria-hidden="true">
                                 {confetti.map((piece) => (
                                     <span

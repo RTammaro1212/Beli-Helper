@@ -18,6 +18,7 @@ export type RankingSessionStatus = {
     id: string;
     clusterId: string;
     state: "running" | "paused" | "cancelled" | "complete" | "error";
+    celebrating: boolean;
     steps: Record<RankingStepId, RankingStepState>;
     error: string | null;
     recovery: "photos_not_found" | null;
