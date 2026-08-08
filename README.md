@@ -1,37 +1,123 @@
 # Auto Beli
 
-Bring photos to the final Beli ranking screen.
+Auto Beli groups meal photos, matches them to nearby restaurants, and helps add them to Beli.
 
 ## Requirements
 
+- A Mac with iPhone Mirroring set up
+- Beli installed and signed in on the connected iPhone
 - Node.js 22 or newer
-- `GOOGLE_MAPS_PLACES_API_KEY`
-- `OPENROUTER_API_KEY`
-- Optional: Codex CLI 0.144.0 or newer, installed and authenticated
+- pnpm 10.15.1
+- A Google Maps API key with Places API (New) enabled
+- One of these options for photo labeling:
+  - Codex CLI 0.144.0 or newer, installed and signed in
+  - An OpenRouter API key
 
-## Run locally
+## Setup
 
-```bash
-nvm use
-pnpm i
-pnpm dev
-```
+1. Clone the repository.
 
-Labeling runs locally through `app/api/label/route.ts`. The route checks for a
-compatible local Codex CLI first and uses GPT-5.6 Luna at medium reasoning. If
-Codex is unavailable or incompatible, it uses `openai/gpt-5.6-luna` through
-OpenRouter.
+   ```bash
+   git clone <repository-url>
+   cd auto-beli
+   ```
 
-Each click of Label creates `logs/<run-id>/`. Logs include the
-Places request/result, runtime selection, model result, and errors. Image bytes
-are intentionally omitted. Browser progress and a copy of each successful run
-are saved in IndexedDB until Clear is confirmed.
+2. Install and select the correct Node.js version.
 
-## Places search
+   ```bash
+   nvm install
+   nvm use
+   ```
 
-The app uses Nearby Search (New) with a 150 meter circular location
-restriction, distance ranking, 20 results, and 50 broad food, drink, venue,
-lodging, retail, and travel types. The complete request schema also exposes the
-API's language, region, included/excluded types, included/excluded primary
-types, result count, location restriction, ranking, routing, and
-future-business parameters in `app/lib/stack-schema.ts`.
+3. Enable pnpm.
+
+   ```bash
+   corepack enable
+   corepack prepare pnpm@10.15.1 --activate
+   ```
+
+4. Install the project packages.
+
+   ```bash
+   pnpm install
+   ```
+
+5. Create a `.env.local` file in the project folder.
+
+   ```bash
+   touch .env.local
+   ```
+
+6. Add your Google Maps API key to `.env.local`.
+
+   ```bash
+   GOOGLE_MAPS_PLACES_API_KEY=your_google_maps_api_key
+   ```
+
+7. Set up photo labeling.
+
+   - To use Codex CLI:
+
+     ```bash
+     codex --version
+     codex login
+     ```
+
+   - Or add an OpenRouter API key to `.env.local`:
+
+     ```bash
+     OPENROUTER_API_KEY=your_openrouter_api_key
+     ```
+
+   - You can configure both. OpenRouter is used as a fallback if Codex fails.
+
+8. Install the Xcode command-line tools for the Beli automation.
+
+   ```bash
+   xcode-select --install
+   ```
+
+9. Give the terminal app that runs Auto Beli these macOS permissions:
+
+   - Open **System Settings → Privacy & Security**.
+   - Enable **Accessibility**.
+   - Enable **Screen & System Audio Recording**.
+   - Restart the terminal app after changing the permissions.
+
+## Run the project
+
+1. Start the development server.
+
+   ```bash
+   pnpm dev
+   ```
+
+2. Open [http://localhost:3000](http://localhost:3000).
+
+3. Stop the server when you are done.
+
+   ```text
+   Control+C
+   ```
+
+## Run a production build
+
+1. Build the project.
+
+   ```bash
+   pnpm build
+   ```
+
+2. Start the production server.
+
+   ```bash
+   pnpm start
+   ```
+
+3. Open [http://localhost:3000](http://localhost:3000).
+
+## Logs
+
+- Each labeling run creates a folder inside `logs/`.
+- Logs include Places results, the selected labeling provider, model results, and errors.
+- Photo data is not written to the logs.
