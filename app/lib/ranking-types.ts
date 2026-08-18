@@ -4,10 +4,13 @@ export const RANKING_STEPS = [
     { id: "start_rating", label: "Start rating" },
     { id: "choose_category", label: "Choose category" },
     { id: "add_rating", label: "Add rating" },
-    { id: "add_notes", label: "Add notes" },
     { id: "set_visit_date", label: "Set visit date" },
+    { id: "add_companions", label: "Add who you went with" },
+    { id: "add_labels", label: "Add labels" },
+    { id: "add_notes", label: "Add notes" },
     { id: "add_photos", label: "Find photos" },
-    { id: "add_photo_descriptions", label: "Add photo descriptions" },
+    { id: "add_photo_descriptions", label: "Describe photos and mark favorites" },
+    { id: "add_favorite_dish", label: "Add additional favorite dishes" },
     { id: "finish_in_beli", label: "Finish in Beli" },
 ] as const;
 

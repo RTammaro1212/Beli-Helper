@@ -23,8 +23,7 @@ const rankingRequestSchema = z.object({
     address: z.string(),
     rating: z.enum(["liked", "fine", "disliked"]),
     category: z.string(),
-    description: z.string(),
-    photoDescriptions: z.preprocess((value) => {
+    companions: z.preprocess((value) => {
         if (typeof value !== "string") return value;
         try {
             return JSON.parse(value) as unknown;
@@ -32,6 +31,39 @@ const rankingRequestSchema = z.object({
             return value;
         }
     }, z.array(z.string().min(1))),
+    labels: z.preprocess((value) => {
+        if (typeof value !== "string") return value;
+        try {
+            return JSON.parse(value) as unknown;
+        } catch {
+            return value;
+        }
+    }, z.array(z.string().min(1))),
+    description: z.string(),
+    additionalFavoriteDishes: z.preprocess((value) => {
+        if (typeof value !== "string") return value;
+        try {
+            return JSON.parse(value) as unknown;
+        } catch {
+            return value;
+        }
+    }, z.array(z.string().min(1))),
+    photoDescriptions: z.preprocess((value) => {
+        if (typeof value !== "string") return value;
+        try {
+            return JSON.parse(value) as unknown;
+        } catch {
+            return value;
+        }
+    }, z.array(z.string())),
+    favoritePhotoIndexes: z.preprocess((value) => {
+        if (typeof value !== "string") return value;
+        try {
+            return JSON.parse(value) as unknown;
+        } catch {
+            return value;
+        }
+    }, z.array(z.number().int().nonnegative())),
     visitDate: z.iso.date(),
 });
 
@@ -43,7 +75,10 @@ const retryRequestSchema = z.object({
         "start_rating",
         "choose_category",
         "add_rating",
+        "add_companions",
+        "add_labels",
         "add_notes",
+        "add_favorite_dish",
         "set_visit_date",
         "add_photos",
         "add_photo_descriptions",
@@ -92,8 +127,12 @@ export async function POST(request: Request) {
             address: formData.get("address"),
             rating: formData.get("rating"),
             category: formData.get("category"),
+            companions: formData.get("companions"),
+            labels: formData.get("labels"),
             description: formData.get("description"),
+            additionalFavoriteDishes: formData.get("additionalFavoriteDishes"),
             photoDescriptions: formData.get("photoDescriptions"),
+            favoritePhotoIndexes: formData.get("favoritePhotoIndexes"),
             visitDate: formData.get("visitDate"),
         });
         const photos = formData
@@ -108,6 +147,12 @@ export async function POST(request: Request) {
         if (input.photoDescriptions.length !== photos.length) {
             return NextResponse.json(
                 { error: "Every photo needs a description." },
+                { status: 400 },
+            );
+        }
+        if (input.favoritePhotoIndexes.some((index) => index >= photos.length)) {
+            return NextResponse.json(
+                { error: "A favorite dish photo is no longer in this meal." },
                 { status: 400 },
             );
         }

@@ -1,5 +1,7 @@
 import { v1 } from "@googlemaps/places";
 
+import { reserveGooglePlacesRequest } from "./places-quota";
+
 import {
     type Coordinate,
     type GooglePlace,
@@ -141,6 +143,7 @@ export async function searchNearbyFoodPlaces(
         throw new Error("GOOGLE_MAPS_PLACES_API_KEY is not configured");
 
     const parameters = nearbyFoodSearchParameters(coordinate);
+    await reserveGooglePlacesRequest();
     const client = new v1.PlacesClient({ apiKey, fallback: true });
     const searchRequest: SearchNearbyRequest = {
         languageCode: parameters.languageCode,

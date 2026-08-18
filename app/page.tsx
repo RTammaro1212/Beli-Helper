@@ -44,6 +44,38 @@ import {
     type RestaurantSelection,
 } from "./lib/stack-schema";
 
+type FileSystemDataTransferItem = DataTransferItem & {
+    getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>;
+};
+
+async function droppedFiles(dataTransfer: DataTransfer) {
+    const files = Array.from(dataTransfer.files);
+
+    for (const item of Array.from(dataTransfer.items)) {
+        if (item.kind !== "file") continue;
+
+        const directFile = item.getAsFile();
+        if (directFile) files.push(directFile);
+
+        const handle = await (
+            item as FileSystemDataTransferItem
+        ).getAsFileSystemHandle?.();
+        if (handle?.kind === "file") {
+            files.push(await (handle as FileSystemFileHandle).getFile());
+        }
+    }
+
+    return files.filter(
+        (file, index) =>
+            files.findIndex(
+                (candidate) =>
+                    candidate.name === file.name &&
+                    candidate.size === file.size &&
+                    candidate.lastModified === file.lastModified,
+            ) === index,
+    );
+}
+
 export default function Home() {
     const [clusters, setClusters] = useState<PhotoCluster[]>([]);
     const [processing, setProcessing] = useState(false);
@@ -202,11 +234,22 @@ export default function Home() {
         event.target.value = "";
     };
 
-    const handlePageDrop = (event: DragEvent<HTMLElement>) => {
+    const handlePageDrop = async (event: DragEvent<HTMLElement>) => {
         if (Array.from(event.dataTransfer.types).includes(PHOTO_DRAG_TYPE)) return;
         event.preventDefault();
         setDraggingOver(false);
-        void addFiles(Array.from(event.dataTransfer.files));
+        setMessage("Receiving dropped photo…");
+        console.info("[photos/drop]", {
+            fileCount: event.dataTransfer.files.length,
+            itemKinds: Array.from(event.dataTransfer.items, (item) => item.kind),
+            types: Array.from(event.dataTransfer.types),
+        });
+        const files = await droppedFiles(event.dataTransfer);
+        if (!files.length) {
+            setMessage("No transferable photo was received");
+            return;
+        }
+        await addFiles(files);
     };
 
     const movePhoto = (photoId: string, targetClusterId: string) => {
@@ -488,11 +531,21 @@ export default function Home() {
             formData.set("restaurantName", restaurantName);
             formData.set("address", address);
             formData.set("rating", feedback.rating);
-            formData.set("category", cluster.category ?? "Restaurant");
+            formData.set("category", feedback.category);
+            formData.set("companions", JSON.stringify(feedback.companions));
+            formData.set("labels", JSON.stringify(feedback.labels));
             formData.set("description", feedback.description);
+            formData.set(
+                "additionalFavoriteDishes",
+                JSON.stringify(feedback.additionalFavoriteDishes),
+            );
             formData.set(
                 "photoDescriptions",
                 JSON.stringify(feedback.photoDescriptions),
+            );
+            formData.set(
+                "favoritePhotoIndexes",
+                JSON.stringify(feedback.favoritePhotoIndexes),
             );
             formData.set("visitDate", visitDate);
             for (const photo of cluster.photos) {
@@ -513,12 +566,22 @@ export default function Home() {
                 );
                 return;
             }
+            setClusters((current) =>
+                current.map((item) =>
+                    item.id === cluster.id
+                        ? { ...item, category: feedback.category }
+                        : item,
+                ),
+            );
             setRankingProgress(result as RankingSessionStatus);
         } catch (error) {
             window.alert(
-                error instanceof Error
-                    ? error.message
-                    : "Could not open ranking workspace",
+                error instanceof Error &&
+                    /^(Load failed|Failed to fetch|NetworkError)/i.test(error.message)
+                    ? "Auto Beli lost its connection to the local server. Keep the Terminal server running, refresh Safari, and try Rank again."
+                    : error instanceof Error
+                      ? error.message
+                      : "Could not open ranking workspace",
             );
         } finally {
             setRankingLaunching(false);
@@ -899,8 +962,9 @@ export default function Home() {
                     restaurantName={
                         rankingCluster.selection?.name ??
                         rankingCluster.match?.selected?.name ??
-                        "it"
+                            "it"
                     }
+                    initialCategory={rankingCluster.category ?? "Restaurant"}
                     photos={rankingCluster.photos}
                     launching={rankingLaunching}
                     progress={rankingProgress}
