@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { access } from "node:fs/promises";
+import { constants } from "node:fs";
 import { promisify } from "node:util";
 
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
@@ -20,6 +22,11 @@ const execFileAsync = promisify(execFile);
 const CODEX_MODEL = "gpt-5.6-luna";
 const OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 const MINIMUM_CODEX_VERSION = [0, 144, 0] as const;
+const CODEX_PATH_CANDIDATES = [
+  process.env.AUTO_BELI_CODEX_PATH,
+  "/Applications/ChatGPT.app/Contents/Resources/codex",
+  "/Applications/Codex.app/Contents/Resources/codex",
+].filter((candidate): candidate is string => Boolean(candidate));
 
 type MatchLogger = {
   write: (name: string, value: unknown) => Promise<void>;
@@ -39,6 +46,18 @@ function isCompatibleVersion(version: number[] | null) {
   return true;
 }
 
+async function resolveCodexPath() {
+  for (const candidate of CODEX_PATH_CANDIDATES) {
+    try {
+      await access(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // Try the next known installation path.
+    }
+  }
+  return "codex";
+}
+
 async function inspectCodex() {
   if (Number(process.versions.node.split(".")[0]) < 22) {
     return {
@@ -48,7 +67,8 @@ async function inspectCodex() {
   }
 
   try {
-    const { stdout, stderr } = await execFileAsync("codex", ["--version"], {
+    const codexPath = await resolveCodexPath();
+    const { stdout, stderr } = await execFileAsync(codexPath, ["--version"], {
       timeout: 5_000,
     });
     const versionOutput = `${stdout} ${stderr}`.trim();
@@ -58,7 +78,7 @@ async function inspectCodex() {
         reason: `Codex ${versionOutput || "version unknown"} is older than 0.144.0`,
       };
     }
-    return { available: true as const, versionOutput };
+    return { available: true as const, codexPath, versionOutput };
   } catch (error) {
     return {
       available: false as const,
@@ -119,6 +139,7 @@ async function runMatch(
   places: GooglePlace[],
   log: MatchLogger,
   logPrefix: string,
+  codexPath?: string,
 ) {
   const outputCount = Math.min(5, places.length);
   const schema = z.object({
@@ -157,6 +178,7 @@ async function runMatch(
       const result = await generateText({
         model: codexExec(CODEX_MODEL, {
           allowNpx: false,
+          codexPath,
           skipGitRepoCheck: true,
           approvalMode: "never",
           sandboxMode: "read-only",
@@ -258,7 +280,14 @@ export async function matchRestaurant({
   let generated: Awaited<ReturnType<typeof runMatch>>;
 
   try {
-    generated = await runMatch(provider, photos, places, log, stackId);
+    generated = await runMatch(
+      provider,
+      photos,
+      places,
+      log,
+      stackId,
+      runtime.codex.available ? runtime.codex.codexPath : undefined,
+    );
   } catch (error) {
     if (provider !== "codex-cli" || !process.env.OPENROUTER_API_KEY) throw error;
     await log.write(`${stackId}-codex-fallback`, {

@@ -12,10 +12,14 @@ private struct AutomationConfiguration: Decodable {
     let address: String
     let rating: String
     let category: String
+    let companions: [String]?
+    let labels: [String]?
     let description: String
+    let additionalFavoriteDishes: [String]?
     let visitDate: String
     let photoPaths: [String]
     let photoDescriptions: [String]?
+    let favoritePhotoIndexes: [Int]?
     let debugDirectory: String?
 }
 
@@ -39,7 +43,8 @@ private enum AutomationFailure: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .message(let message): message
-        case .photosNotFound: "Not every meal photo could be matched in the Beli album."
+        case .photosNotFound:
+            "Auto Beli couldn't match every photo automatically. Select the meal photos in the iPhone picker, then choose Continue with added photos."
         }
     }
 
@@ -107,6 +112,7 @@ private final class BeliAutomation {
     func run() async throws {
         if startStep == "skip_photos" {
             try await skipPhotos()
+            try await addingFavoriteDish()
             try await finishingInBeli()
             emit(type: "complete", step: nil, message: nil)
             return
@@ -114,6 +120,7 @@ private final class BeliAutomation {
         if startStep == "continue_photos" {
             try await continueFromPhotoPicker()
             try await addingPhotoDescriptions()
+            try await addingFavoriteDish()
             try await finishingInBeli()
             emit(type: "complete", step: nil, message: nil)
             return
@@ -126,26 +133,53 @@ private final class BeliAutomation {
         if startIndex <= 2 { try await startingRating() }
         if startIndex <= 3 { try await choosingCategory() }
         if startIndex <= 4 { try await addingRating() }
-        if startIndex <= 5 { try await addingNotes() }
-        if startIndex <= 6 { try await settingVisitDate() }
-        if startIndex <= 7 { try await findingPhotos() }
-        if startIndex <= 8 { try await addingPhotoDescriptions() }
-        if startIndex <= 9 { try await finishingInBeli() }
+        if startIndex <= 5 { try await settingVisitDate() }
+        if startIndex <= 6 { try await addingCompanions() }
+        if startIndex <= 7 { try await addingLabels() }
+        if startIndex <= 8 { try await addingNotes() }
+        if startIndex <= 9 { try await findingPhotos() }
+        if startIndex <= 10 { try await addingPhotoDescriptions() }
+        if startIndex <= 11 { try await addingFavoriteDish() }
+        if startIndex <= 12 { try await finishingInBeli() }
         emit(type: "complete", step: nil, message: nil)
     }
 
     private func openingBeli() async throws {
         start("open_beli")
         activatePhoneWindow()
-        _ = try await waitForText("beli", timeout: 90) { item in
+        if let _ = try await findText("beli", timeout: 90, predicate: { item in
             item.center.x < 0.32 && item.center.y < 0.25
+        }) {
+            finish("open_beli")
+            return
         }
-        finish("open_beli")
+
+        let items = try recognizeText(in: await capture.image())
+        let photoPickerIsOpen = items.contains {
+            normalize($0.text) == "photos" && $0.center.y < 0.2
+        } && items.contains {
+            normalize($0.text) == "collections" && $0.center.y < 0.2
+        }
+        if photoPickerIsOpen {
+            throw AutomationFailure.message(
+                "The iPhone photo picker is still open. Tap X to return to Beli, then retry from Open Beli."
+            )
+        }
+        throw AutomationFailure.message(
+            "Beli is not visible. Open Beli's Search screen in iPhone Mirroring, then retry from Open Beli."
+        )
     }
 
     private func findingRestaurant() async throws {
         start("find_restaurant")
-        let search = try await waitForText("search a restaurant", timeout: 30)
+        try await openRestaurantSearch()
+        // Beli's current Restaurants screen says “Search restaurant, cuisine,
+        // occasion” (without “a”). Limit this to the wide field under the
+        // Restaurants/Members tabs so a smaller label named “Search” cannot
+        // win the OCR match.
+        let search = try await waitForText("search restaurant", timeout: 30) { item in
+            item.center.y > 0.23 && item.center.y < 0.37 && item.width > 0.42
+        }
         try await clickDetectedTarget(search.center)
         try await pause(1.1)
         try typeText("\(configuration.restaurantName) \(configuration.address)")
@@ -155,9 +189,27 @@ private final class BeliAutomation {
         let result = try await waitForText(prefix, timeout: 45) { item in
             item.center.y > currentLocation.center.y + 0.025
         }
-        try await clickDetectedTarget(result.center)
-        try await pause(1.5)
+        try await tapRestaurantResult(result)
         finish("find_restaurant")
+    }
+
+    private func openRestaurantSearch() async throws {
+        let isRestaurantSearchVisible = try await findText(
+            "search restaurant",
+            timeout: 1
+        ) { item in
+            item.center.y > 0.23 && item.center.y < 0.37 && item.width > 0.42
+        } != nil
+
+        if !isRestaurantSearchVisible {
+            // The Search tab is the teal plus at the bottom of Beli's home screen.
+            try await clickDetectedTarget(CGPoint(x: 0.51, y: 0.925))
+        }
+
+        let restaurants = try await waitForText("restaurants", timeout: 15) { item in
+            item.center.x < 0.58 && item.center.y < 0.30
+        }
+        try await clickDetectedTarget(restaurants.center)
     }
 
     private func addingRating() async throws {
@@ -179,13 +231,47 @@ private final class BeliAutomation {
 
     private func startingRating() async throws {
         start("start_rating")
+
+        if try await findText("add to my list of", timeout: 4) != nil {
+            finish("start_rating")
+            return
+        }
+
+        let prefix = String(configuration.restaurantName.prefix(10))
+        if let result = try await findText(prefix, timeout: 3) {
+            try await tapRestaurantResult(result)
+            if try await findText("add to my list of", timeout: 4) != nil {
+                finish("start_rating")
+                return
+            }
+        }
+
         let image = try await capture.image()
         guard let plusPoint = Self.findTealCircle(in: image) else {
-            throw AutomationFailure.message("The teal rating button could not be found.")
+            throw AutomationFailure.message("The restaurant’s add button could not be found.")
         }
         try await clickThroughScreenshot(plusPoint)
-        try await pause(1)
+        _ = try await waitForText("add to my list of", timeout: 15)
         finish("start_rating")
+    }
+
+    private func tapRestaurantResult(_ result: OCRItem) async throws {
+        // The result OCR can include both the restaurant name and its address.
+        // Its bounding-box center therefore lands below the row's plus button.
+        // Try the name-line position first, then a slightly higher fallback.
+        let candidates = [
+            result.y + min(result.height * 0.28, 0.035),
+            max(0.05, result.center.y - 0.025),
+            result.center.y,
+        ]
+        for y in candidates {
+            try await clickDetectedTarget(CGPoint(x: 0.81, y: y))
+            try await pause(0.55)
+            if try await findText("add to my list of", timeout: 2) != nil {
+                return
+            }
+        }
+        _ = try await waitForText("add to my list of", timeout: 12)
     }
 
     private func choosingCategory() async throws {
@@ -223,6 +309,146 @@ private final class BeliAutomation {
             try await clickDetectedTarget(done.center)
         }
         finish("add_notes")
+    }
+
+    private func addingCompanions() async throws {
+        start("add_companions")
+        let companions = (configuration.companions ?? []).filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if !companions.isEmpty {
+            try await addSearchSelections(
+                field: "who did you go with",
+                values: companions
+            )
+        }
+        finish("add_companions")
+    }
+
+    private func addingLabels() async throws {
+        start("add_labels")
+        let labels = (configuration.labels ?? []).filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if !labels.isEmpty {
+            try await addLabelSelections(labels)
+        }
+        finish("add_labels")
+    }
+
+    private func addLabelSelections(_ values: [String]) async throws {
+        let fieldItem = try await waitForText("add labels", timeout: 20)
+        try await clickDetectedTarget(fieldItem.center)
+        let labels = values.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }
+        let searchField = try await waitForText("search labels", timeout: 10)
+
+        for value in labels {
+            // Search one label at a time.
+            try await clickDetectedTarget(CGPoint(x: 0.5, y: searchField.center.y))
+            try replaceFocusedText(value)
+
+            let row = try await waitForText(value, timeout: 15) {
+                $0.center.y > searchField.center.y + 0.07
+            }
+            // Select its checkbox, then explicitly empty the search box before
+            // starting the next label. Beli preserves selected labels while the
+            // query is cleared.
+            // The checkbox is centered on Beli's two-line result row, below
+            // the label title that OCR returns. The live picker places it
+            // roughly 2% of the screen height lower than that title center.
+            try await clickDetectedTarget(
+                CGPoint(x: 0.91, y: min(0.95, row.center.y + 0.018))
+            )
+            try await clickDetectedTarget(CGPoint(x: 0.5, y: searchField.center.y))
+            try replaceFocusedText("")
+            try await pause(0.35)
+        }
+
+        if let done = try await findText("done", timeout: 3) {
+            try await clickDetectedTarget(done.center)
+        } else {
+            // The header button sits just below the mirrored phone's status bar.
+            try await clickDetectedTarget(CGPoint(x: 0.86, y: 0.15))
+        }
+    }
+
+    private func isLabelSelected(row: OCRItem, in image: CGImage) -> Bool {
+        guard let pixels = Self.rgbaPixels(image) else { return false }
+        let width = image.width
+        let height = image.height
+        let centerX = Int(Double(width) * 0.91)
+        let centerY = Int(Double(height) * row.center.y)
+        let radiusX = max(8, width / 42)
+        let radiusY = max(8, height / 70)
+
+        for y in max(0, centerY - radiusY)...min(height - 1, centerY + radiusY) {
+            for x in max(0, centerX - radiusX)...min(width - 1, centerX + radiusX) {
+                let offset = (y * width + x) * 4
+                let red = Int(pixels[offset])
+                let green = Int(pixels[offset + 1])
+                let blue = Int(pixels[offset + 2])
+                if green > red + 16,
+                   blue > red + 16,
+                   green > 55,
+                   blue > 55,
+                   red < 90 {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private func addSearchSelections(field: String, values: [String]) async throws {
+        let fieldItem = try await waitForText(field, timeout: 20)
+        try await clickDetectedTarget(fieldItem.center)
+        try await pause(0.7)
+
+        for value in values {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let visibleValue = try await findText(trimmed, timeout: 2) {
+                try await clickDetectedTarget(visibleValue.center)
+                continue
+            }
+
+            if let search = try await findText("search", timeout: 5) {
+                try await clickDetectedTarget(search.center)
+                try replaceFocusedText(trimmed)
+            } else {
+                try typeText(trimmed)
+            }
+
+            let result = try await waitForText(trimmed, timeout: 20) {
+                $0.center.y > 0.16
+            }
+            try await clickDetectedTarget(result.center)
+        }
+
+        if let done = try await findText("done", timeout: 6) {
+            try await clickDetectedTarget(done.center)
+        }
+    }
+
+    private func addingFavoriteDish() async throws {
+        start("add_favorite_dish")
+        let dishes = (configuration.additionalFavoriteDishes ?? []).compactMap { value in
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if !dishes.isEmpty {
+            let field = try await waitForText("add favorite dish", timeout: 20)
+            try await clickDetectedTarget(field.center)
+            try await pause(0.7)
+            try typeText(dishes.joined(separator: ", "))
+            _ = try await waitForText(String(dishes[0].prefix(12)), timeout: 15)
+            let done = try await waitForText("done", timeout: 15) {
+                $0.center.y < 0.18
+            }
+            try await clickDetectedTarget(done.center)
+        }
+        finish("add_favorite_dish")
     }
 
     private func settingVisitDate() async throws {
@@ -267,49 +493,11 @@ private final class BeliAutomation {
         let addPhotos = try await waitForText("add photos", timeout: 20)
         try await clickDetectedTarget(addPhotos.center)
 
-        var album: OCRItem?
-        var collectionsIsOpen = false
-        for _ in 0..<3 {
-            let collections = try await waitForText("collections", timeout: 15) {
-                $0.center.y < 0.2
-            }
-            try await pause(0.5)
-            try await clickDetectedTarget(collections.center)
-            try await pause(0.8)
-
-            album = try await findText("beli", timeout: 2) {
-                $0.center.y > 0.15
-            }
-            if album != nil {
-                collectionsIsOpen = true
-                break
-            }
-            let albums = try await findText("albums", timeout: 2) {
-                $0.center.y > 0.15
-            }
-            if albums != nil {
-                collectionsIsOpen = true
-                break
-            }
+        let photosTab = try await waitForText("photos", timeout: 20) {
+            $0.center.y < 0.2 && $0.center.x < 0.55
         }
-        guard collectionsIsOpen else {
-            throw AutomationFailure.message("The photo picker did not open Collections.")
-        }
-
-        var albumScrolls = 0
-        while album == nil && albumScrolls < 12 {
-            scrollDown()
-            try await pause(0.65)
-            album = try await findText("beli", timeout: 3) { item in
-                item.center.y > 0.15
-            }
-            albumScrolls += 1
-        }
-        guard let album else {
-            throw AutomationFailure.message("The Beli photo album could not be found.")
-        }
-        try await clickDetectedTarget(album.center)
-        _ = try await waitForText("beli", timeout: 20) { $0.center.y < 0.18 }
+        try await clickDetectedTarget(photosTab.center)
+        try await pause(1)
 
         let targets = configuration.photoPaths.compactMap(Self.loadImage)
         guard targets.count == configuration.photoPaths.count else {
@@ -318,9 +506,22 @@ private final class BeliAutomation {
         try saveSelectedPhotoOrder([])
         _ = try await selectPhotos(targets)
 
-        click(CGPoint(x: 0.938, y: 0.144))
-        _ = try await waitForText("photo upload", timeout: 20) { $0.center.y < 0.2 }
+        try await finishPhotoPickerSelection()
         finish("add_photos")
+    }
+
+    private func finishPhotoPickerSelection() async throws {
+        let image = try await capture.image()
+        let checkmark = Self.findPhotoPickerCheck(in: image)
+            ?? CGPoint(x: 0.92, y: 0.145)
+        try await clickDetectedTarget(checkmark)
+        if try await findText("photo upload", timeout: 5) == nil {
+            // The checkmark can briefly move as the selected count updates.
+            try await clickDetectedTarget(CGPoint(x: 0.92, y: 0.145))
+        }
+        _ = try await waitForText("photo upload", timeout: 20) {
+            $0.center.y < 0.2
+        }
     }
 
     private func continueFromPhotoPicker() async throws {
@@ -328,80 +529,79 @@ private final class BeliAutomation {
             $0.center.y < 0.2
         }
         if existingUpload == nil {
-            click(CGPoint(x: 0.938, y: 0.144))
-            _ = try await waitForText("photo upload", timeout: 20) { $0.center.y < 0.2 }
+            try await finishPhotoPickerSelection()
         }
     }
 
     private func addingPhotoDescriptions() async throws {
         start("add_photo_descriptions")
         _ = try await waitForText("photo upload", timeout: 20) { $0.center.y < 0.2 }
-        let descriptions = loadSelectedPhotoOrder().map { index in
-            guard let photoDescriptions = configuration.photoDescriptions,
-                  photoDescriptions.indices.contains(index) else {
-                return "Menu"
+        let favoriteIndexes = Set(configuration.favoritePhotoIndexes ?? [])
+        let selectedPhotos = loadSelectedPhotoOrder().map { index in
+            let value: String
+            if let photoDescriptions = configuration.photoDescriptions,
+               photoDescriptions.indices.contains(index) {
+                value = photoDescriptions[index]
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                value = ""
             }
-            let value = photoDescriptions[index].trimmingCharacters(in: .whitespacesAndNewlines)
-            return value.isEmpty ? "Menu" : value
+            return (description: value, favorite: favoriteIndexes.contains(index))
         }
-        try await addPhotoDescriptions(descriptions)
+        emit(
+            type: "diagnostic",
+            step: "add_photo_descriptions",
+            message: "received \(selectedPhotos.filter { !$0.description.isEmpty }.count) nonblank descriptions and \(selectedPhotos.filter(\.favorite).count) favorites for \(selectedPhotos.count) selected photos"
+        )
+        try await addPhotoDescriptions(selectedPhotos)
         let save = try await waitForText("save", timeout: 35) { $0.center.y < 0.18 }
         try await clickDetectedTarget(save.center)
         finish("add_photo_descriptions")
     }
 
-    private func addPhotoDescriptions(_ descriptions: [String]) async throws {
+    private func addPhotoDescriptions(
+        _ photos: [(description: String, favorite: Bool)]
+    ) async throws {
         _ = try await waitForText("photo upload", timeout: 20) { $0.center.y < 0.2 }
-        guard !descriptions.isEmpty else {
+        guard !photos.isEmpty else {
             throw AutomationFailure.message("No added photos were found to describe.")
         }
 
-        var prompt: OCRItem?
-        var previousScreenFeature: [Float]?
-        var unchangedScreens = 0
-        var scrolls = 0
-
-        while prompt == nil && scrolls < 40 {
-            let image = try await capture.image()
-            let items = try recognizeText(in: image)
-            prompt = items
-                .filter { item in
-                    let text = normalize(item.text)
-                    return text.contains("what s this") &&
-                        item.center.y > 0.14 &&
-                        item.center.y < 0.88
-                }
-                .min { $0.center.y < $1.center.y }
-
-            if prompt != nil { break }
-
-            let screenFeature = imageFeature(image)
-            if let previousScreenFeature,
-               featureDistance(previousScreenFeature, screenFeature) < 0.006 {
-                unchangedScreens += 1
-            } else {
-                unchangedScreens = 0
-            }
-            if unchangedScreens >= 2 { break }
-            previousScreenFeature = screenFeature
-            scrollPhotoUpload()
-            try await pause(0.55)
-            scrolls += 1
-        }
-
-        guard let prompt else {
-            throw AutomationFailure.message("No added photos were found to describe.")
-        }
-        try await clickDetectedTarget(prompt.center)
-
-        for (index, description) in descriptions.enumerated() {
+        for (index, photo) in photos.enumerated() {
+            try await openPhotoDescriptionEditor()
             _ = try await waitForText("description", timeout: 12) {
                 $0.center.y < 0.2
             }
             try await pause(0.6)
-            try typeText(description)
 
-            let isLastDescription = index == descriptions.count - 1
+            // Beli does not consistently keep the text field focused after
+            // Next. Refocus the visible prompt for every photo.
+            if let prompt = try await findText("what s this", timeout: 4) {
+                try await clickDetectedTarget(CGPoint(x: 0.52, y: prompt.center.y))
+            } else {
+                try await clickDetectedTarget(CGPoint(x: 0.52, y: 0.22))
+            }
+            if !photo.description.isEmpty {
+                // These fields are blank on entry; Cmd+A/Delete can dismiss
+                // focus in Beli's custom editor, so type directly instead.
+                try typeText(photo.description)
+            }
+
+            if photo.favorite {
+                let favoriteLabel = try await waitForText(
+                    "mark as a favorite dish",
+                    timeout: 12
+                )
+                let image = try await capture.image()
+                if !isFavoriteSelected(label: favoriteLabel, in: image) {
+                    try await clickDetectedTarget(
+                        CGPoint(x: 0.935, y: favoriteLabel.center.y)
+                    )
+                    try await pause(0.45)
+                }
+            }
+
+            let isLastDescription = index == photos.count - 1
             let button = try await waitForText(
                 isLastDescription ? "done" : "next",
                 timeout: 12
@@ -419,6 +619,54 @@ private final class BeliAutomation {
         _ = try await waitForText("photo upload", timeout: 20) {
             $0.center.y < 0.2
         }
+    }
+
+    private func openPhotoDescriptionEditor() async throws {
+        if try await findText("description", timeout: 1) != nil {
+            return
+        }
+        try await pause(0.9)
+        var promptY = 0.22
+        if let prompt = try await findText("what s this", timeout: 4) {
+            promptY = prompt.center.y
+        }
+        for _ in 0..<3 {
+            try await clickDetectedTarget(CGPoint(x: 0.52, y: promptY))
+            try await pause(0.75)
+            if try await findText("description", timeout: 2) != nil {
+                return
+            }
+        }
+        _ = try await waitForText("description", timeout: 8) {
+            $0.center.y < 0.2
+        }
+    }
+
+    private func isFavoriteSelected(label: OCRItem, in image: CGImage) -> Bool {
+        guard let pixels = Self.rgbaPixels(image) else { return false }
+        let width = image.width
+        let height = image.height
+        let centerX = Int(Double(width) * 0.935)
+        let centerY = Int(Double(height) * label.center.y)
+        let radiusX = max(8, width / 38)
+        let radiusY = max(8, height / 65)
+
+        for y in max(0, centerY - radiusY)...min(height - 1, centerY + radiusY) {
+            for x in max(0, centerX - radiusX)...min(width - 1, centerX + radiusX) {
+                let offset = (y * width + x) * 4
+                let red = Int(pixels[offset])
+                let green = Int(pixels[offset + 1])
+                let blue = Int(pixels[offset + 2])
+                if green > red + 16,
+                   blue > red + 16,
+                   green > 55,
+                   blue > 55,
+                   red < 95 {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private func finishingInBeli() async throws {
@@ -441,7 +689,9 @@ private final class BeliAutomation {
                     $0.center.y > 0.8
                 }
                 try await clickDetectedTarget(feed.center)
-                _ = try await waitForText("search a restaurant", timeout: 20)
+                _ = try await waitForText("search restaurant", timeout: 20) { item in
+                    item.center.y > 0.23 && item.center.y < 0.37 && item.width > 0.42
+                }
                 finish("finish_in_beli")
                 return
             }
@@ -497,11 +747,13 @@ private final class BeliAutomation {
             )
 
             if let candidate = candidates.first(where: { candidate in
-                guard candidate.distance < 0.24 else { return false }
+                // iOS Photos thumbnails can be heavily recompressed and
+                // center-cropped compared with the imported original.
+                guard candidate.distance < 0.34 else { return false }
                 let secondBest = candidates.first {
                     $0.target == candidate.target && $0.cell != candidate.cell
                 }?.distance ?? .greatestFiniteMagnitude
-                return candidate.distance + 0.035 < secondBest || candidate.distance < 0.13
+                return candidate.distance + 0.045 < secondBest || candidate.distance < 0.18
             }) {
                 try await clickDetectedTarget(cells[candidate.cell].point)
                 remaining.remove(candidate.target)
@@ -870,10 +1122,16 @@ private final class BeliAutomation {
 
     private func click(_ normalizedPoint: CGPoint) {
         activatePhoneWindow()
+        // iPhone Mirroring can discard the first event immediately after it
+        // comes to the foreground. Move the cursor to the target and give the
+        // window the same brief activation delay used by the verified manual
+        // click path.
+        usleep(250_000)
         let point = CGPoint(
             x: capture.window.frame.minX + normalizedPoint.x * capture.window.frame.width,
             y: capture.window.frame.minY + normalizedPoint.y * capture.window.frame.height
         )
+        CGWarpMouseCursorPosition(point)
         let down = CGEvent(mouseEventSource: eventSource, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)
         let up = CGEvent(mouseEventSource: eventSource, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)
         down?.post(tap: .cghidEventTap)
@@ -910,6 +1168,30 @@ private final class BeliAutomation {
                 units: .pixel,
                 wheelCount: 1,
                 wheel1: -320,
+                wheel2: 0,
+                wheel3: 0
+            )?.post(tap: .cghidEventTap)
+            usleep(45_000)
+        }
+    }
+
+    private func scrollUp() {
+        activatePhoneWindow()
+        let point = globalPoint(CGPoint(x: 0.5, y: 0.42))
+        CGWarpMouseCursorPosition(point)
+        CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: .mouseMoved,
+            mouseCursorPosition: point,
+            mouseButton: .left
+        )?.post(tap: .cghidEventTap)
+        usleep(70_000)
+        for _ in 0..<2 {
+            CGEvent(
+                scrollWheelEvent2Source: eventSource,
+                units: .pixel,
+                wheelCount: 1,
+                wheel1: 320,
                 wheel2: 0,
                 wheel3: 0
             )?.post(tap: .cghidEventTap)
@@ -999,6 +1281,24 @@ private final class BeliAutomation {
         usleep(500_000)
     }
 
+    private func replaceFocusedText(_ text: String) throws {
+        activatePhoneWindow()
+        let clearing = Process()
+        clearing.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        clearing.arguments = [
+            "-e", "tell application \"System Events\" to keystroke \"a\" using command down",
+            "-e", "tell application \"System Events\" to key code 51",
+        ]
+        clearing.standardOutput = FileHandle.nullDevice
+        clearing.standardError = FileHandle.nullDevice
+        try clearing.run()
+        clearing.waitUntilExit()
+        guard clearing.terminationStatus == 0 else {
+            throw AutomationFailure.message("macOS could not clear the Beli field.")
+        }
+        try typeText(text)
+    }
+
     private static func findTealCircle(in image: CGImage) -> CGPoint? {
         guard let pixels = rgbaPixels(image) else { return nil }
         let width = image.width
@@ -1043,6 +1343,42 @@ private final class BeliAutomation {
             x: Double(best.x) / Double(width),
             y: Double(best.y) / Double(height)
         )
+    }
+
+    private static func findPhotoPickerCheck(in image: CGImage) -> CGPoint? {
+        guard let pixels = rgbaPixels(image) else { return nil }
+        let width = image.width
+        let height = image.height
+        let radius = Double(width) * 0.034
+
+        func isSelectedColor(x: Int, y: Int) -> Bool {
+            guard x >= 0, x < width, y >= 0, y < height else { return false }
+            let offset = (y * width + x) * 4
+            let red = Int(pixels[offset])
+            let green = Int(pixels[offset + 1])
+            let blue = Int(pixels[offset + 2])
+            let teal = green > red + 10 && blue > red + 10 && green > 55 && blue > 55
+            let blueMatch = blue > red + 18 && blue > green - 18 && blue > 70
+            return teal || blueMatch
+        }
+
+        var best: (x: Int, y: Int, score: Int)?
+        for y in stride(from: Int(Double(height) * 0.08), to: Int(Double(height) * 0.23), by: 2) {
+            for x in stride(from: Int(Double(width) * 0.80), to: Int(Double(width) * 0.98), by: 2) {
+                var score = 0
+                for sample in 0..<32 {
+                    let angle = Double(sample) / 32 * .pi * 2
+                    let sampleX = x + Int(cos(angle) * radius)
+                    let sampleY = y + Int(sin(angle) * radius)
+                    if isSelectedColor(x: sampleX, y: sampleY) { score += 1 }
+                }
+                if best == nil || score > best!.score {
+                    best = (x, y, score)
+                }
+            }
+        }
+        guard let best, best.score >= 8 else { return nil }
+        return CGPoint(x: Double(best.x) / Double(width), y: Double(best.y) / Double(height))
     }
 
     private func pause(_ seconds: Double) async throws {
@@ -1239,10 +1575,13 @@ private final class BeliAutomation {
         "start_rating",
         "choose_category",
         "add_rating",
-        "add_notes",
         "set_visit_date",
+        "add_companions",
+        "add_labels",
+        "add_notes",
         "add_photos",
         "add_photo_descriptions",
+        "add_favorite_dish",
         "finish_in_beli",
     ]
     private static let dateFormatter: DateFormatter = {

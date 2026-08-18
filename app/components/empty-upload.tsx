@@ -66,6 +66,11 @@ export function EmptyUpload({
             <h1 className="m-0 font-sans text-3xl font-semibold leading-none tracking-[-0.04em] text-neutral-950">
                 {processing ? "Sorting your photos…" : "Drop photos here"}
             </h1>
+            {message !== "Drop photos or a zip anywhere" ? (
+                <p className="m-0 font-sans text-[15px] text-neutral-500">
+                    {message}
+                </p>
+            ) : null}
         </section>
     );
 }

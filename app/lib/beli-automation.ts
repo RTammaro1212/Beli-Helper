@@ -24,8 +24,12 @@ type StartAutomationInput = {
     address: string;
     rating: "liked" | "fine" | "disliked";
     category: string;
+    companions: string[];
+    labels: string[];
     description: string;
+    additionalFavoriteDishes: string[];
     photoDescriptions: string[];
+    favoritePhotoIndexes: number[];
     visitDate: string;
     photos: File[];
 };
@@ -265,8 +269,12 @@ export async function startBeliAutomation(input: StartAutomationInput) {
             address: input.address,
             rating: input.rating,
             category: input.category,
+            companions: input.companions,
+            labels: input.labels,
             description: input.description,
+            additionalFavoriteDishes: input.additionalFavoriteDishes,
             photoDescriptions: input.photoDescriptions,
+            favoritePhotoIndexes: input.favoritePhotoIndexes,
             visitDate: input.visitDate,
             photoPaths,
             debugDirectory: workDirectory,

@@ -1,6 +1,8 @@
 # Auto Beli
 
-Auto Beli groups meal photos, matches them to nearby restaurants, and helps add them to Beli.
+Auto Beli groups meal photos, matches them to nearby restaurants, drafts an editable review in your style, and helps add the complete review to Beli.
+
+See [MVP_STATUS.md](MVP_STATUS.md) for the current end-to-end flow, known limitations, and recommended probes.
 
 ## Requirements
 
@@ -9,7 +11,7 @@ Auto Beli groups meal photos, matches them to nearby restaurants, and helps add 
 - Node.js 22 or newer
 - pnpm 10.15.1
 - A Google Maps API key with Places API (New) enabled
-- One of these options for photo labeling:
+- One of these options for photo labeling and review drafting:
   - Codex CLI 0.144.0 or newer, installed and signed in
   - An OpenRouter API key
 
@@ -69,7 +71,7 @@ Auto Beli groups meal photos, matches them to nearby restaurants, and helps add 
      OPENROUTER_API_KEY=your_openrouter_api_key
      ```
 
-   - You can configure both. OpenRouter is used as a fallback if Codex fails.
+   - You can configure both for photo labeling. Review drafting uses the locally signed-in Codex CLI so it can run without a separate AI API key.
 
 8. Install the Xcode command-line tools for the Beli automation.
 

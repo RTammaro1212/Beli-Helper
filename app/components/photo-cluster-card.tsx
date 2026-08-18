@@ -271,6 +271,12 @@ export function PhotoClusterCard({
 
             <div className="flex-1" />
 
+            {cluster.labelStatus === "error" && cluster.labelError ? (
+                <p className="m-0 text-sm leading-relaxed text-red-700" role="alert">
+                    {cluster.labelError}
+                </p>
+            ) : null}
+
             {canLabel ? (
                 <button
                     className="rounded-sm bg-accent px-3 py-2 text-sm text-white transition-colors hover:bg-accent/85 disabled:opacity-50"
